@@ -1,11 +1,10 @@
-/* Easy Tibetan Copy : front-end state machine */
+/* Easy Tibetan Copy : front-end state machine (100% client-side, no server) */
 const App = (() => {
   const views = ['upload', 'config', 'processing', 'result', 'error'];
   const $ = (id) => document.getElementById(id);
-  const cfg = { maxUploadMb: 5, maxQueue: 50 };
+  const WARN_MB = 20;
 
   let state = {};
-  let pollTimer = null;
 
   // ---- helpers -------------------------------------------------------------
   function showView(name) {
@@ -23,24 +22,66 @@ const App = (() => {
     return (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  async function api(url, opts) {
-    const res = await fetch(url, opts);
-    let body = null;
-    try { body = await res.json(); } catch (_) {}
-    if (!res.ok) {
-      const detail = (body && body.detail) || `Request failed (${res.status})`;
-      throw new Error(detail);
-    }
-    return body;
+  function download(bytes, filename, mime) {
+    const blob = new Blob([bytes], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  function baseName() {
+    return (state.filename || 'document').replace(/\.pdf$/i, '');
+  }
+
+  // ---- the engine (Pyodide in a Web Worker) --------------------------------
+  let worker = null;
+  let pending = null;
+
+  function engine() {
+    if (worker) return worker;
+    worker = new Worker('worker.js');
+    worker.onmessage = (e) => {
+      const m = e.data;
+      if (m.type === 'progress') { onPhase(m.phase); return; }
+      if (m.type === 'error') {
+        const p = pending; pending = null;
+        if (p) p.reject(new Error(m.message));
+        return;
+      }
+      const p = pending; pending = null;
+      if (p) p.resolve(m);
+    };
+    worker.onerror = (e) => {
+      const p = pending; pending = null;
+      if (p) p.reject(new Error(e.message || 'Engine crashed (the file may be too large).'));
+    };
+    return worker;
+  }
+
+  function call(type, payload = {}, transfer) {
+    return new Promise((resolve, reject) => {
+      pending = { resolve, reject };
+      engine().postMessage({ type, ...payload }, transfer || []);
+    });
+  }
+
+  function onPhase(phase) {
+    const map = {
+      booting: 'Starting the engine…',
+      'loading-packages': 'Loading the PDF toolkit…',
+      installing: 'Loading the Tibetan fixer…',
+      ready: 'Engine ready.',
+      working: 'Working on your document…',
+    };
+    const sub = $('proc-sub');
+    if (sub && map[phase]) sub.textContent = map[phase];
   }
 
   // ---- init ----------------------------------------------------------------
-  async function init() {
-    try {
-      const c = await api('/api/config');
-      cfg.maxUploadMb = c.max_upload_mb; cfg.maxQueue = c.max_queue;
-      $('limit-pill').textContent = `PDF · up to ${c.max_upload_mb} MB`;
-    } catch (_) { /* defaults are fine */ }
+  function init() {
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
     wireDropzone();
     showView('upload');
   }
@@ -53,45 +94,55 @@ const App = (() => {
     ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('drag'); }));
     ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); if (ev === 'dragleave' && drop.contains(e.relatedTarget)) return; drop.classList.remove('drag'); }));
     drop.addEventListener('drop', (e) => { const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
-    // also allow paste of a file
     window.addEventListener('paste', (e) => {
       const f = [...(e.clipboardData?.files || [])][0]; if (f) handleFile(f);
     });
   }
 
-  // ---- step 1: analyze -----------------------------------------------------
+  // ---- step 1: read + analyze (locally) ------------------------------------
   async function handleFile(file) {
-    if (file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    if (file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf'))
       return toast('Please choose a PDF file.');
-    }
-    if (file.size > cfg.maxUploadMb * 1024 * 1024) {
-      return toast(`That file is ${(file.size / 1048576).toFixed(1)} MB — the limit is ${cfg.maxUploadMb} MB.`);
-    }
+
+    state = { filename: file.name, mode: 'fix', pages: 'all' };
+
+    const mb = file.size / 1048576;
+    if (mb > WARN_MB && !file._confirmed) return renderSizeWarning(file, mb);
+
     $('proc-title').textContent = 'Reading your document…';
-    $('proc-sub').textContent = 'Inspecting fonts and pages.';
-    $('proc-queue').hidden = true;
+    $('proc-sub').textContent = 'Warming up the engine…';
     showView('processing');
     try {
-      const fd = new FormData(); fd.append('file', file);
-      const data = await api('/api/analyze', { method: 'POST', body: fd });
-      state = {
-        token: data.token,
-        filename: data.filename || file.name,
-        analysis: data.analysis,
-        mode: 'fix',
-        pages: 'all',
-      };
+      const buf = await file.arrayBuffer();
+      // Transfer the buffer to the worker; it keeps /in.pdf in its FS for fix/extract.
+      const a = await call('analyze', { bytes: buf }, [buf]);
+      state.analysis = a;
       renderConfig();
     } catch (err) { showError(err.message); }
+  }
+
+  function renderSizeWarning(file, mb) {
+    showView('processing');
+    $('proc-title').textContent = 'Large file';
+    $('proc-sub').textContent = `This PDF is ${mb.toFixed(0)} MB. Everything runs in your browser, and large files can use a lot of memory — the tab may run out of memory and crash. A desktop computer is recommended.`;
+    const sub = $('proc-sub');
+    const actions = document.createElement('div');
+    actions.className = 'btn-actions';
+    actions.style.justifyContent = 'center';
+    actions.style.marginTop = '16px';
+    actions.innerHTML = `
+      <button class="btn btn-ghost" id="warn-cancel">Choose another</button>
+      <button class="btn btn-primary" id="warn-go">Continue anyway</button>`;
+    sub.after(actions);
+    $('warn-cancel').onclick = () => reset();
+    $('warn-go').onclick = () => { actions.remove(); file._confirmed = true; handleFile(file); };
   }
 
   // ---- step 2: configure ---------------------------------------------------
   function renderConfig() {
     const a = state.analysis;
-
-    const fontChips = (a.fonts || []).map((f) => {
-      return `<span class="chip">${esc(f.name)}</span>`;
-    }).join('') || '<span class="chip">No embedded fonts detected</span>';
+    const fontChips = (a.fonts || []).map((f) => `<span class="chip">${esc(f)}</span>`).join('')
+      || '<span class="chip">No embedded fonts detected</span>';
 
     $('view-config').innerHTML = `
       <div class="panel swap-enter">
@@ -121,7 +172,7 @@ const App = (() => {
               </button>
               <button class="tile ${state.mode === 'extract' ? 'on' : ''}" data-mode="extract">
                 <span class="ti"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg></span>
-                <div><h4>Extract text</h4><p>Pull clean, structured text out of the PDF.</p></div>
+                <div><h4>Extract text</h4><p>Pull clean Unicode text out of the PDF.</p></div>
               </button>
             </div>
           </div>
@@ -145,7 +196,6 @@ const App = (() => {
         </div>
       </div>`;
 
-    // wire controls
     $('view-config').querySelectorAll('.tile').forEach((t) => t.addEventListener('click', () => {
       state.mode = t.dataset.mode;
       $('view-config').querySelectorAll('.tile').forEach((x) => x.classList.toggle('on', x === t));
@@ -162,63 +212,25 @@ const App = (() => {
     showView('config');
   }
 
-  // ---- step 3: submit + poll ----------------------------------------------
+  // ---- step 3: run (in the worker) -----------------------------------------
   async function submit() {
     $('go').disabled = true;
     $('proc-title').textContent = state.mode === 'fix' ? 'Repairing your PDF…' : 'Extracting text…';
-    $('proc-sub').textContent = 'This usually takes a few seconds.';
-    $('proc-queue').hidden = true;
+    $('proc-sub').textContent = 'Working on your document…';
     showView('processing');
     try {
-      const job = await api('/api/jobs', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: state.token, mode: state.mode, pages: state.pages }),
-      });
-      state.jobId = job.job_id;
-      reflect(job);
-      poll();
+      if (state.mode === 'fix') {
+        const r = await call('fix');
+        renderPdfResult(r.stats || {}, r.pdfBytes);
+      } else {
+        const r = await call('extract', { pages: state.pages });
+        renderTextResult(r);
+      }
     } catch (err) { showError(err.message); }
   }
 
-  function reflect(job) {
-    if (job.status === 'queued') {
-      const pos = job.position || 0;
-      const q = $('proc-queue');
-      q.hidden = false;
-      q.className = 'qpos';
-      q.innerHTML = pos <= 0
-        ? `<span>You're next in line…</span>`
-        : `<b>${pos}</b><span>ahead of you in the queue</span>`;
-      $('proc-title').textContent = 'Waiting in the queue';
-      $('proc-sub').textContent = 'One document is processed at a time.';
-    } else if (job.status === 'processing') {
-      $('proc-queue').hidden = true;
-      $('proc-title').textContent = state.mode === 'fix' ? 'Repairing your PDF…' : 'Extracting text…';
-      $('proc-sub').textContent = 'Almost there.';
-    }
-  }
-
-  function poll() {
-    clearTimeout(pollTimer);
-    pollTimer = setTimeout(async () => {
-      try {
-        const job = await api('/api/jobs/' + state.jobId);
-        if (job.status === 'done') return renderResult(job);
-        if (job.status === 'error') return showError(job.error || 'Processing failed.');
-        reflect(job);
-        poll();
-      } catch (err) { showError(err.message); }
-    }, 750);
-  }
-
-  // ---- step 4: result ------------------------------------------------------
-  function renderResult(job) {
-    if (job.result_kind === 'pdf') return renderPdfResult(job);
-    return renderTextResult(job);
-  }
-
-  function renderPdfResult(job) {
-    const s = job.stats || {};
+  // ---- step 4: results -----------------------------------------------------
+  function renderPdfResult(s, pdfBytes) {
     const statCards = [
       ['Fonts seen', s.fonts_seen],
       ['Fonts fixed', (s.patched || 0) + (s.upgrades || 0)],
@@ -238,28 +250,27 @@ const App = (() => {
         </div>
       </div>`;
     $('dl').addEventListener('click', () => {
-      window.location.href = job.download_url;
-      const b = $('dl');
-      setTimeout(() => { b.innerHTML = 'Downloaded ✓'; toast('Downloaded. The file is now wiped from the server.'); }, 400);
+      download(pdfBytes, baseName() + '.fixed.pdf', 'application/pdf');
+      toast('Downloaded.');
     });
     showView('result');
   }
 
-  function renderTextResult(job) {
-    const text = job.text || '';
+  function renderTextResult(r) {
+    const text = r.text || '';
     const words = text.trim() ? text.trim().split(/\s+/).length : 0;
     $('view-result').innerHTML = `
       <div class="panel swap-enter">
         <div class="result-head">
           <div class="badge-ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>
-          <div><h3>Text extracted</h3><p>${job.pages_used} of ${job.page_count} page${job.page_count === 1 ? '' : 's'} · Markdown</p></div>
+          <div><h3>Text extracted</h3><p>${r.pages_used} of ${r.page_count} page${r.page_count === 1 ? '' : 's'} · Unicode text</p></div>
         </div>
         <div class="texttools">
-          <span class="fmt">${esc((job.format || 'text'))} · ${words.toLocaleString()} words</span>
+          <span class="fmt">${words.toLocaleString()} words</span>
           <div style="display:flex;gap:10px">
             <button class="linkbtn" id="copy">Copy</button>
-            <button class="linkbtn" id="save">${job.format === 'markdown' ? '.md' : '.txt'}</button>
-            ${job.docx_download_url ? '<button class="linkbtn" id="save-docx">Word (.docx)</button>' : ''}
+            <button class="linkbtn" id="save">.txt</button>
+            <button class="linkbtn" id="save-docx">Word (.docx)</button>
           </div>
         </div>
         <div class="textbox" id="textbox">${esc(text) || '<span style="color:var(--ink-faint)">No extractable text on the selected pages.</span>'}</div>
@@ -272,33 +283,22 @@ const App = (() => {
       catch (_) { toast('Could not copy automatically — select the text.'); }
     });
     $('save').addEventListener('click', () => {
-      const ext = job.format === 'markdown' ? 'md' : 'txt';
-      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = (state.filename || 'document').replace(/\.pdf$/i, '') + '.' + ext;
-      a.click(); URL.revokeObjectURL(url);
+      download(text, baseName() + '.txt', 'text/plain;charset=utf-8');
     });
-    if (job.docx_download_url) {
-      const docxBtn = $('save-docx');
-      docxBtn.addEventListener('click', () => {
-        // Server streams the .docx then evicts the job; disable to avoid a 2nd 404.
-        docxBtn.disabled = true;
-        window.location.href = job.docx_download_url;
-      });
-    }
+    $('save-docx').addEventListener('click', () => {
+      download(r.docxBytes, baseName() + '.docx',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    });
     showView('result');
   }
 
   // ---- errors / reset ------------------------------------------------------
   function showError(msg) {
-    clearTimeout(pollTimer);
     $('err-msg').textContent = msg || 'Unexpected error.';
     showView('error');
   }
 
   function reset() {
-    clearTimeout(pollTimer);
     state = {};
     $('file').value = '';
     showView('upload');
