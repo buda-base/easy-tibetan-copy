@@ -125,7 +125,29 @@ upstream rather than locally. Verified zero regression on the real TibetanChogya
 (0 quotes / 0 PUA across 168 pages; extraction returns correct Unicode).
 **Revisit if:** We need a legacy font upstream doesn't yet handle and can't wait for a fix.
 
+## 2026-06-14 — Go 100% client-side (server removed), drop Markdown
+**Chosen:** Remove the FastAPI server entirely and run `pdf-cmap-fix` in the browser via
+Pyodide 0.29.4 (bundles PyMuPDF 1.26.3 + fonttools) in a Web Worker; `micropip`-install the
+pure-python `pdf-cmap-fix` wheel + `python-docx`. Static app deployed to GitHub Pages.
+**Alternatives:** keep the server; reimplement the fix in JS on `mupdf.js` (WASM); hybrid
+(browser for small files, server for big).
+**Why:** Validated in a spike (`spike/browser-pyodide/`, see [[browser-only-pyodide-spike]]):
+the real upstream code runs verbatim in-browser with quality identical to the server
+(59,240 Tibetan codepoints, PUA=0 on the reference TibetanChogyal PDF). Eliminates the
+server, queue, single-worker constraint and 5 MB cap; gives a real "file never leaves your
+device" privacy story; free GitHub Pages hosting. Pyodide keeps upstream as the single source
+of truth (no JS re-fork). Full design: `docs/superpowers/specs/2026-06-14-browser-only-port-design.md`.
+**Trade-offs:** Tens of MB of WASM on first load (mitigated by a service worker cache);
+**Markdown export dropped** — `pymupdf4llm` hard-requires PyMuPDF 1.27.2.3, newer than
+Pyodide bundles, so text extraction uses `pdf-cmap-fix`'s own clean-Unicode extraction
+(`.txt`/`.docx`); large files (>~20 MB) can OOM the tab (a 52 MB PDF peaked ~1.16 GB) so they
+get a warning but are not blocked.
+**Revisit if:** Pyodide bundles PyMuPDF 1.27.x (Markdown becomes portable again), or mobile
+support for large files becomes a hard requirement (would need a server fallback).
+
 ## Uncertainties left for the user to confirm on return
 - ~~Legacy Tibetan conversion is experimental~~ — resolved: handled automatically by
   upstream `pdf-cmap-fix`, validated on a real PDF (see the 2026-06-14 decision above).
-- Queue TTL (15 min) and memory ceiling assumptions.
+- ~~Queue TTL (15 min) and memory ceiling assumptions.~~ — obsolete: the server (and its
+  queue) was removed in the 2026-06-14 browser-only decision above. The browser memory ceiling
+  is now handled by the >20 MB warning.
