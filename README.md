@@ -21,8 +21,9 @@ Tibetan Copy repairs that map so the text comes out as correct Unicode.
   by glyph outline) — no toggle, no extra step.
 - **Extract text** — pulls clean Unicode text out of the PDF, with an option to take
   **only odd or only even pages** (handy for pecha-style books printed two-up). The PDF
-  is repaired first, so legacy fonts come out as correct Unicode. Download it as `.txt`
-  or as a **Word `.docx`**.
+  is repaired first, so legacy fonts come out as correct Unicode. The on-screen preview and
+  the **Word `.docx`** keep the original **font sizes, bold/italic and paragraph flow**;
+  a plain **`.txt`** is also available.
 
 ## How it works
 
@@ -64,8 +65,9 @@ source.
   desktop computer is recommended for big PDFs. Typical Tibetan text PDFs (a few MB) are
   comfortable, including on mobile.
 - **Markdown export is not available** in the browser build: `pymupdf4llm` requires a
-  newer PyMuPDF than Pyodide currently bundles. Text extraction uses `pdf-cmap-fix`'s own
-  clean-Unicode extraction (`.txt` / `.docx`).
+  newer PyMuPDF than Pyodide currently bundles. Instead, extraction repairs the PDF then
+  reads PyMuPDF's structured text and preserves formatting (font size, bold/italic,
+  paragraphs) into the `.docx` (plus a plain `.txt`).
 - Coverage of legacy fonts depends on the font being known to `pdf-cmap-fix`; report
   fonts that don't convert upstream at
   [OpenPecha/pdf-cmap-fix](https://github.com/OpenPecha/pdf-cmap-fix).
