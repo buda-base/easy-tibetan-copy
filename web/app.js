@@ -256,14 +256,32 @@ const App = (() => {
     showView('result');
   }
 
+  function renderBlocks(blocks) {
+    if (!blocks || !blocks.length) return '';
+    return blocks.map((b) => {
+      const lines = (b.lines || []).map((line) => {
+        const spans = line.map((run) => {
+          const st = [];
+          if (run.s) st.push(`font-size:${Math.max(13, run.s * 1.25).toFixed(1)}px`);
+          if (run.b) st.push('font-weight:700');
+          if (run.i) st.push('font-style:italic');
+          return `<span style="${st.join(';')}">${esc(run.t)}</span>`;
+        }).join('');
+        return `<div class="ln">${spans || '&nbsp;'}</div>`;
+      }).join('');
+      return `<div class="para">${lines}</div>`;
+    }).join('');
+  }
+
   function renderTextResult(r) {
     const text = r.text || '';
     const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+    const rich = renderBlocks(r.blocks);
     $('view-result').innerHTML = `
       <div class="panel swap-enter">
         <div class="result-head">
           <div class="badge-ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>
-          <div><h3>Text extracted</h3><p>${r.pages_used} of ${r.page_count} page${r.page_count === 1 ? '' : 's'} · Unicode text</p></div>
+          <div><h3>Text extracted</h3><p>${r.pages_used} of ${r.page_count} page${r.page_count === 1 ? '' : 's'} · formatting preserved</p></div>
         </div>
         <div class="texttools">
           <span class="fmt">${words.toLocaleString()} words</span>
@@ -273,7 +291,7 @@ const App = (() => {
             <button class="linkbtn" id="save-docx">Word (.docx)</button>
           </div>
         </div>
-        <div class="textbox" id="textbox">${esc(text) || '<span style="color:var(--ink-faint)">No extractable text on the selected pages.</span>'}</div>
+        <div class="textbox rich" id="textbox">${rich || '<span style="color:var(--ink-faint)">No extractable text on the selected pages.</span>'}</div>
         <div class="btn-actions">
           <button class="btn btn-ghost" onclick="App.reset()" style="margin-left:auto">Do another</button>
         </div>

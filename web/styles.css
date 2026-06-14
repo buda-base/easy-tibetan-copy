@@ -265,6 +265,12 @@ header {
   white-space: pre-wrap; word-break: break-word; box-shadow: inset 0 1px 3px rgba(44,28,12,.03);
 }
 .textbox::-webkit-scrollbar{ width:10px; } .textbox::-webkit-scrollbar-thumb{ background: var(--line-strong); border-radius:99px; border:3px solid #fffefb;}
+/* formatting-preserving preview: blocks (paragraphs) -> lines -> styled runs */
+.textbox.rich { white-space: normal; }
+.textbox.rich .para { margin: 0 0 .8em; }
+.textbox.rich .para:last-child { margin-bottom: 0; }
+.textbox.rich .ln { display:block; }
+.textbox.rich span { font-family: inherit; }
 
 /* error */
 .err { text-align:center; padding: 40px 20px; }
