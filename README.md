@@ -75,6 +75,7 @@ source.
 ## Credits & license
 
 Wraps [OpenPecha/pdf-cmap-fix](https://github.com/OpenPecha/pdf-cmap-fix) (MIT). This
-wrapper is under the repository's [`LICENSE`](LICENSE). See
-[`DECISIONS.md`](DECISIONS.md) and
+wrapper is under the repository's [`LICENSE`](LICENSE). The text preview is rendered with the
+**Tibetan Machine Uni** font (THL, freely redistributable), bundled at
+[`web/fonts/`](web/fonts/). See [`DECISIONS.md`](DECISIONS.md) and
 [`docs/superpowers/specs/`](docs/superpowers/specs/) for the reasoning behind the design.

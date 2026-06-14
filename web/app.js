@@ -258,11 +258,23 @@ const App = (() => {
 
   function renderBlocks(blocks) {
     if (!blocks || !blocks.length) return '';
+    // Normalise PDF point-sizes to readable on-screen px: map the dominant size
+    // (the one carrying the most text — i.e. the body) to ~18px, keeping relative
+    // proportions so headings stay bigger. Absolute PDF sizes are often huge.
+    const charsBySize = {};
+    for (const b of blocks) for (const ln of b.lines) for (const r of ln) {
+      if (r.s) charsBySize[r.s] = (charsBySize[r.s] || 0) + (r.t ? r.t.length : 0);
+    }
+    let body = 0, best = -1;
+    for (const s in charsBySize) if (charsBySize[s] > best) { best = charsBySize[s]; body = parseFloat(s); }
+    const scale = body ? 18 / body : 1;
+    const px = (s) => Math.max(12, Math.min(40, s * scale));
+
     return blocks.map((b) => {
       const lines = (b.lines || []).map((line) => {
         const spans = line.map((run) => {
           const st = [];
-          if (run.s) st.push(`font-size:${Math.max(13, run.s * 1.25).toFixed(1)}px`);
+          if (run.s) st.push(`font-size:${px(run.s).toFixed(1)}px`);
           if (run.b) st.push('font-weight:700');
           if (run.i) st.push('font-style:italic');
           return `<span style="${st.join(';')}">${esc(run.t)}</span>`;
@@ -285,14 +297,12 @@ const App = (() => {
         </div>
         <div class="texttools">
           <span class="fmt">${words.toLocaleString()} words</span>
-          <div style="display:flex;gap:10px">
-            <button class="linkbtn" id="copy">Copy</button>
-            <button class="linkbtn" id="save">.txt</button>
-            <button class="linkbtn" id="save-docx">Word (.docx)</button>
-          </div>
         </div>
         <div class="textbox rich" id="textbox">${rich || '<span style="color:var(--ink-faint)">No extractable text on the selected pages.</span>'}</div>
-        <div class="btn-actions">
+        <div class="btn-actions" style="flex-wrap:wrap">
+          <button class="btn btn-ghost" id="copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</button>
+          <button class="btn btn-ghost" id="save"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> .txt</button>
+          <button class="btn btn-ghost" id="save-docx"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> .docx</button>
           <button class="btn btn-ghost" onclick="App.reset()" style="margin-left:auto">Do another</button>
         </div>
       </div>`;
