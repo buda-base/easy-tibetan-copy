@@ -14,6 +14,11 @@ tmp/
 *.patched.txt
 *.diff.txt
 
+# Built wheel (produced by scripts/build-wheel.sh and in CI) — never committed
+web/wheels/
+# Local test PDFs dropped into the spike dir
+spike/browser-pyodide/*.pdf
+
 # Playwright / test artifacts
 .playwright-mcp/
 shot_*.jpeg
