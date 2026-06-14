@@ -176,18 +176,6 @@ header {
   font-size:.82rem; padding: 6px 12px; border-radius: 999px;
   background: var(--paper-deep); border:1px solid var(--line); color: var(--ink-soft);
 }
-.chip.legacy { background: linear-gradient(180deg,#fbeada,#f6dcbf); border-color: var(--saffron-soft); color: var(--maroon-deep); font-weight:600; }
-
-/* legacy banner */
-.banner {
-  display:flex; gap: 14px; align-items:flex-start; margin-top: 20px;
-  padding: 16px 18px; border-radius: var(--radius);
-  background: linear-gradient(180deg, #fdf2e3, #fbe9d3); border:1px solid var(--saffron-soft);
-}
-.banner svg { color: var(--saffron); flex:none; margin-top:1px; }
-.banner .t { font-size: .92rem; color: var(--maroon-deep); }
-.banner .t b { font-weight: 700; }
-.banner .t small { display:block; color: var(--ink-soft); margin-top:3px; font-size:.82rem; }
 
 /* ----------------------------------------------------------- option controls */
 .opts { display:grid; gap: 22px; }
@@ -214,15 +202,6 @@ header {
 .field-row { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
 .field-row .lab h4 { font-size:.96rem; font-weight:600; }
 .field-row .lab p { font-size:.82rem; color: var(--ink-faint); }
-
-/* toggle */
-.switch { position:relative; display:inline-flex; align-items:center; gap:12px; cursor:pointer; }
-.switch input { position:absolute; opacity:0; width:0;height:0; }
-.track { width:46px; height:27px; border-radius:999px; background: var(--line-strong); transition: background .3s var(--ease); flex:none; position:relative; }
-.track::after { content:''; position:absolute; top:3px; left:3px; width:21px;height:21px;border-radius:50%; background:#fff; box-shadow: var(--shadow-sm); transition: transform .3s var(--ease); }
-.switch input:checked + .track { background: var(--maroon); }
-.switch input:checked + .track::after { transform: translateX(19px); }
-.tag-exp { font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; color: var(--warn); border:1px solid currentColor; border-radius:6px; padding:1px 6px; font-weight:700; vertical-align:middle; margin-left:6px;}
 
 /* ----------------------------------------------------------- buttons */
 .btn {

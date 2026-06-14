@@ -2,7 +2,7 @@
 const App = (() => {
   const views = ['upload', 'config', 'processing', 'result', 'error'];
   const $ = (id) => document.getElementById(id);
-  const cfg = { maxUploadMb: 5, maxQueue: 50, legacy: false };
+  const cfg = { maxUploadMb: 5, maxQueue: 50 };
 
   let state = {};
   let pollTimer = null;
@@ -38,7 +38,7 @@ const App = (() => {
   async function init() {
     try {
       const c = await api('/api/config');
-      cfg.maxUploadMb = c.max_upload_mb; cfg.maxQueue = c.max_queue; cfg.legacy = c.legacy_tibetan_available;
+      cfg.maxUploadMb = c.max_upload_mb; cfg.maxQueue = c.max_queue;
       $('limit-pill').textContent = `PDF · up to ${c.max_upload_mb} MB`;
     } catch (_) { /* defaults are fine */ }
     wireDropzone();
@@ -80,7 +80,6 @@ const App = (() => {
         analysis: data.analysis,
         mode: 'fix',
         pages: 'all',
-        tibetan: false,
       };
       renderConfig();
     } catch (err) { showError(err.message); }
@@ -89,28 +88,10 @@ const App = (() => {
   // ---- step 2: configure ---------------------------------------------------
   function renderConfig() {
     const a = state.analysis;
-    const legacyDetected = a.has_legacy_tibetan && a.legacy_supported;
-    state.tibetan = legacyDetected; // default on when detected
 
     const fontChips = (a.fonts || []).map((f) => {
-      const isLegacy = (a.legacy_fonts || []).some((l) => l.pdf_name === f.name);
-      return `<span class="chip ${isLegacy ? 'legacy' : ''}">${esc(f.name)}</span>`;
+      return `<span class="chip">${esc(f.name)}</span>`;
     }).join('') || '<span class="chip">No embedded fonts detected</span>';
-
-    const legacyBanner = legacyDetected ? `
-      <div class="banner">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/></svg>
-        <div class="t"><b>Legacy Tibetan font detected.</b>
-          <small>This document uses a pre-Unicode font. Pecha can convert it to Unicode so it copies and searches correctly.</small>
-        </div>
-      </div>` : '';
-
-    const tibetanToggle = legacyDetected ? `
-      <div class="field-row">
-        <div class="lab"><h4>Convert legacy font to Unicode <span class="tag-exp">Experimental</span></h4>
-          <p>Map the old font's bytes to proper Tibetan Unicode.</p></div>
-        <label class="switch"><input type="checkbox" id="opt-tib" ${state.tibetan ? 'checked' : ''}/><span class="track"></span></label>
-      </div>` : '';
 
     $('view-config').innerHTML = `
       <div class="panel swap-enter">
@@ -127,7 +108,6 @@ const App = (() => {
 
         <div class="section-label">Fonts in this document</div>
         <div class="chips">${fontChips}</div>
-        ${legacyBanner}
 
         <div class="divline"></div>
 
@@ -156,8 +136,6 @@ const App = (() => {
               </div>
             </div>
           </div>
-
-          ${tibetanToggle}
         </div>
 
         <div class="btn-actions">
@@ -179,8 +157,6 @@ const App = (() => {
       state.pages = b.dataset.pages;
       seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
     }));
-    const tib = $('opt-tib');
-    if (tib) tib.addEventListener('change', () => { state.tibetan = tib.checked; });
     $('go').addEventListener('click', submit);
 
     showView('config');
@@ -190,13 +166,13 @@ const App = (() => {
   async function submit() {
     $('go').disabled = true;
     $('proc-title').textContent = state.mode === 'fix' ? 'Repairing your PDF…' : 'Extracting text…';
-    $('proc-sub').textContent = state.tibetan ? 'Including legacy-font Unicode conversion.' : 'This usually takes a few seconds.';
+    $('proc-sub').textContent = 'This usually takes a few seconds.';
     $('proc-queue').hidden = true;
     showView('processing');
     try {
       const job = await api('/api/jobs', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: state.token, mode: state.mode, pages: state.pages, tibetan_unicode: state.tibetan }),
+        body: JSON.stringify({ token: state.token, mode: state.mode, pages: state.pages }),
       });
       state.jobId = job.job_id;
       reflect(job);
@@ -243,15 +219,11 @@ const App = (() => {
 
   function renderPdfResult(job) {
     const s = job.stats || {};
-    const ls = job.legacy_stats;
     const statCards = [
       ['Fonts seen', s.fonts_seen],
       ['Fonts fixed', (s.patched || 0) + (s.upgrades || 0)],
       ['Already OK', s.no_change],
     ].map(([label, val]) => `<div class="stat"><b>${val ?? 0}</b><span>${label}</span></div>`).join('');
-
-    const legacyNote = ls ? `<p style="text-align:center;color:var(--ink-faint);font-size:.86rem;margin-top:-6px">
-      Legacy Unicode conversion applied to ${ls.fonts_converted} font${ls.fonts_converted === 1 ? '' : 's'}.</p>` : '';
 
     $('view-result').innerHTML = `
       <div class="panel swap-enter">
@@ -260,7 +232,6 @@ const App = (() => {
           <div><h3>Your PDF is fixed</h3><p>Copy-paste and text extraction should now return correct Unicode.</p></div>
         </div>
         <div class="stats">${statCards}</div>
-        ${legacyNote}
         <div class="btn-actions">
           <button class="btn btn-primary" id="dl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> Download fixed PDF</button>
           <button class="btn btn-ghost" onclick="App.reset()">Do another</button>
@@ -281,7 +252,7 @@ const App = (() => {
       <div class="panel swap-enter">
         <div class="result-head">
           <div class="badge-ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>
-          <div><h3>Text extracted</h3><p>${job.pages_used} of ${job.page_count} page${job.page_count === 1 ? '' : 's'}${job.format === 'markdown' ? ' · Markdown' : ' · Unicode text'}</p></div>
+          <div><h3>Text extracted</h3><p>${job.pages_used} of ${job.page_count} page${job.page_count === 1 ? '' : 's'} · Markdown</p></div>
         </div>
         <div class="texttools">
           <span class="fmt">${esc((job.format || 'text'))} · ${words.toLocaleString()} words</span>

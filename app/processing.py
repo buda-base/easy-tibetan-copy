@@ -5,14 +5,15 @@ the underlying libraries (pdf-cmap-fix, pymupdf4llm) open by path.
 
 from __future__ import annotations
 
-from typing import Optional
+import os
+import tempfile
 
 import fitz  # PyMuPDF
 import pymupdf4llm
 
 from pdf_cmap_fix import patch_pdf
 
-from . import docx_export, legacy_tibetan
+from . import docx_export
 
 
 class ProcessingError(Exception):
@@ -44,7 +45,7 @@ def _select_pages(page_count: int, mode: str) -> list[int]:
 
 
 def analyze_pdf(pdf_path: str) -> dict:
-    """Inspect a PDF without modifying it: page count, fonts, legacy detection."""
+    """Inspect a PDF without modifying it: page count and fonts."""
     doc = _open(pdf_path)
     try:
         fonts: dict[str, dict] = {}
@@ -54,21 +55,17 @@ def analyze_pdf(pdf_path: str) -> dict:
                 ftype = f[1] or ""
                 if base_font not in fonts:
                     fonts[base_font] = {"name": base_font, "type": ftype}
-        legacy = legacy_tibetan.detect_legacy_fonts(doc)
         return {
             "page_count": doc.page_count,
             "fonts": list(fonts.values()),
-            "legacy_fonts": legacy,
-            "has_legacy_tibetan": bool(legacy),
-            "legacy_supported": legacy_tibetan.is_available(),
         }
     finally:
         doc.close()
 
 
-def process_fix(pdf_path: str, tibetan_unicode: bool = False) -> dict:
-    """Repair the /ToUnicode CMap so copy-paste works. Optionally also inject
-    Unicode CMaps for legacy Tibetan fonts. Returns patched PDF bytes + stats.
+def process_fix(pdf_path: str) -> dict:
+    """Repair the /ToUnicode CMap so copy-paste works (legacy Tibetan fonts are
+    handled automatically by pdf-cmap-fix). Returns patched PDF bytes + stats.
     """
     try:
         result = patch_pdf(pdf_path, write_file=False)
@@ -77,51 +74,49 @@ def process_fix(pdf_path: str, tibetan_unicode: bool = False) -> dict:
 
     pdf_bytes = result["pdf_bytes"]
     stats = dict(result.get("stats", {}))
-    legacy_stats = None
-
-    if tibetan_unicode and legacy_tibetan.is_available():
-        # Re-open the already-patched bytes and add legacy ToUnicode CMaps.
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        try:
-            legacy_stats = legacy_tibetan.inject_unicode_cmaps(doc)
-            pdf_bytes = doc.tobytes(garbage=4, deflate=True)
-        finally:
-            doc.close()
 
     return {
         "kind": "pdf",
         "pdf_bytes": pdf_bytes,
         "stats": stats,
-        "legacy_stats": legacy_stats,
         "size": len(pdf_bytes),
     }
 
 
-def process_extract(
-    pdf_path: str,
-    pages_mode: str = "all",
-    tibetan_unicode: bool = False,
-) -> dict:
-    """Extract text. Markdown via PyMuPDF4LLM by default; Unicode-converted plain
-    text when legacy Tibetan conversion is requested and available.
+def process_extract(pdf_path: str, pages_mode: str = "all") -> dict:
+    """Extract Markdown text via PyMuPDF4LLM. The PDF is patched first so legacy
+    Tibetan fonts extract as correct Unicode (handled by pdf-cmap-fix).
     """
-    doc = _open(pdf_path)
     try:
+        result = patch_pdf(pdf_path, write_file=False)
+    except Exception as exc:
+        raise ProcessingError(f"CMap repair failed: {exc}") from exc
+    patched_bytes = result["pdf_bytes"]
+
+    tmp_path = None
+    doc = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(suffix=".pdf")
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(patched_bytes)
+
+        doc = fitz.open(stream=patched_bytes, filetype="pdf")
         page_count = doc.page_count
         indices = _select_pages(page_count, pages_mode)
         if not indices:
-            return {"kind": "text", "text": "", "format": "markdown", "page_count": page_count, "pages_used": 0}
+            return {
+                "kind": "text",
+                "text": "",
+                "format": "markdown",
+                "page_count": page_count,
+                "pages_used": 0,
+            }
 
-        use_legacy = tibetan_unicode and legacy_tibetan.is_available()
-        if use_legacy and legacy_tibetan.detect_legacy_fonts(doc):
-            text = legacy_tibetan.convert_pdf_to_unicode_text(doc, indices)
-            fmt = "text"
-        else:
-            text = pymupdf4llm.to_markdown(pdf_path, pages=indices, show_progress=False)
-            fmt = "markdown"
+        text = pymupdf4llm.to_markdown(tmp_path, pages=indices, show_progress=False)
+        fmt = "markdown"
         # Build a .docx alongside the preview text (preserves formatting).
         try:
-            docx_bytes = docx_export.to_docx_bytes(text, is_markdown=(fmt == "markdown"))
+            docx_bytes = docx_export.to_docx_bytes(text, is_markdown=True)
         except Exception:
             docx_bytes = b""  # never fail the extraction over the optional .docx
     except ProcessingError:
@@ -129,7 +124,10 @@ def process_extract(
     except Exception as exc:
         raise ProcessingError(f"Extraction failed: {exc}") from exc
     finally:
-        doc.close()
+        if doc is not None:
+            doc.close()
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
     return {
         "kind": "text",
@@ -146,10 +144,9 @@ def process_extract(
 def process(pdf_path: str, options: dict) -> dict:
     """Dispatch a job described by `options` to the right processor."""
     mode = options.get("mode", "fix")
-    tibetan_unicode = bool(options.get("tibetan_unicode", False))
     if mode == "extract":
         pages_mode = options.get("pages", "all")
         if pages_mode not in ("all", "even", "odd"):
             pages_mode = "all"
-        return process_extract(pdf_path, pages_mode, tibetan_unicode)
-    return process_fix(pdf_path, tibetan_unicode)
+        return process_extract(pdf_path, pages_mode)
+    return process_fix(pdf_path)

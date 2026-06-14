@@ -147,7 +147,6 @@ class JobManager:
             payload["result_kind"] = res.get("kind")
             if res.get("kind") == "pdf":
                 payload["stats"] = res.get("stats")
-                payload["legacy_stats"] = res.get("legacy_stats")
                 payload["size"] = res.get("size")
                 payload["download_url"] = f"/api/jobs/{job.id}/download"
             elif res.get("kind") == "text":

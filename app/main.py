@@ -2,7 +2,7 @@
 
 Flow:
   POST /api/analyze   upload a PDF (<=5MB) -> inspect fonts, stage bytes, return token
-  POST /api/jobs      {token, mode, pages, tibetan_unicode} -> enqueue
+  POST /api/jobs      {token, mode, pages} -> enqueue
   GET  /api/jobs/{id} poll status / queue position / result
   GET  /api/jobs/{id}/download  stream the fixed PDF, then evict from memory
 """
@@ -18,7 +18,7 @@ from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import legacy_tibetan, processing
+from . import processing
 from .queue_manager import QueueFull, manager
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
@@ -66,7 +66,6 @@ async def config():
     return {
         "max_upload_mb": MAX_UPLOAD_BYTES // (1024 * 1024),
         "max_queue": 50,
-        "legacy_tibetan_available": legacy_tibetan.is_available(),
     }
 
 
@@ -115,7 +114,6 @@ async def create_job(payload: dict = Body(...)):
     options = {
         "mode": mode,
         "pages": payload.get("pages", "all"),
-        "tibetan_unicode": bool(payload.get("tibetan_unicode", False)),
     }
     try:
         result = await manager.enqueue(pending.filename, pending.data, options)

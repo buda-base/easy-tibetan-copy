@@ -10,16 +10,15 @@ repairs that map so the text comes out correct — and can also extract clean te
 ## What it does
 
 - **Fix the PDF** — repairs the `/ToUnicode` CMap (via `pdf-cmap-fix`) so copy-paste,
-  search and extraction return correct Unicode. Download the fixed PDF.
+  search and extraction return correct Unicode. Download the fixed PDF. Pre-Unicode
+  **legacy Tibetan fonts** (TibetanChogyal, Ededris/Dedris, …) are handled automatically
+  by `pdf-cmap-fix` — no toggle, no extra step.
 - **Extract text** — pulls clean, structured **Markdown** out of the PDF
   (via [PyMuPDF4LLM](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/)), with an
-  option to take **only odd or only even pages** (handy for pecha-style books). Download
-  it as `.md`/`.txt` or as a formatting-preserving **Word `.docx`** (rendered with
+  option to take **only odd or only even pages** (handy for pecha-style books). The PDF is
+  repaired first, so legacy fonts come out as correct Unicode. Download it as `.md`/`.txt`
+  or as a formatting-preserving **Word `.docx`** (rendered with
   [pandoc](https://pandoc.org/) when installed, otherwise `python-docx`).
-- **Legacy Tibetan → Unicode** *(experimental)* — detects pre-Unicode Tibetan fonts and,
-  when found, offers to convert them to Unicode both in the extracted text and as an
-  in-place `/ToUnicode` injection in the downloaded PDF. Mappings come from BDRC's
-  [`py-tiblegenc`](https://github.com/buda-base/py-tiblegenc).
 
 ## Design constraints (built in)
 
@@ -56,28 +55,28 @@ app/
   main.py            FastAPI: API + serves the static SPA, 5 MB cap, two-phase flow
   queue_manager.py   single-worker asyncio queue (50 slots), in-memory jobs, TTL sweep
   processing.py      the heavy work: analyze / fix / extract  (runs in a thread pool)
-  legacy_tibetan.py  legacy-font detection, text conversion, /ToUnicode injection
+  docx_export.py     render extracted text to .docx (pandoc, python-docx fallback)
 web/
   index.html  styles.css  app.js   no build step — plain, fast, hand-crafted
 ```
 
 **Request flow:** `POST /api/analyze` (inspect fonts, stage bytes, return a token) →
-`POST /api/jobs` (`{token, mode, pages, tibetan_unicode}`) → poll `GET /api/jobs/{id}` →
-`GET /api/jobs/{id}/download` (streams the PDF, then evicts it from memory).
+`POST /api/jobs` (`{token, mode, pages}`) → poll `GET /api/jobs/{id}` →
+`GET /api/jobs/{id}/download` (streams the PDF — or `?format=docx` — then evicts it).
 
 See [`DECISIONS.md`](DECISIONS.md) for the reasoning behind each choice.
 
 ## Status / caveats
 
 - The **core fix and extraction paths are tested** end-to-end (API + browser).
-- **Legacy Tibetan conversion** has been validated on a real `TibetanChogyal` PDF: the
-  injected `/ToUnicode` makes copy-paste return correct Unicode (verified clean — no quote
-  or PUA artifacts across all pages). Coverage still depends on the font being present in
-  BDRC's `tiblegenc` mapping; please test your own samples and report fonts that don't convert.
+- **Legacy Tibetan** is repaired by `pdf-cmap-fix` itself (it vendors the BDRC tiblegenc
+  tables and identifies obfuscated fonts by glyph outline). Validated on a real
+  `TibetanChogyal` PDF: copy-paste returns correct Unicode, clean across all pages.
+  Coverage depends on the font being known to `pdf-cmap-fix`; report fonts that don't convert
+  upstream at [OpenPecha/pdf-cmap-fix](https://github.com/OpenPecha/pdf-cmap-fix).
 - The queue is in-process: state is per-instance and not shared across workers, so run a
   single Uvicorn worker (the default here).
 
 ## Licenses
 
-This wrapper is under the repository's `LICENSE`. It depends on `pdf-cmap-fix` (MIT) and
-`py-tiblegenc` (Apache-2.0).
+This wrapper is under the repository's `LICENSE`. It depends on `pdf-cmap-fix` (MIT).

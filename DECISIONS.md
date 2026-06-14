@@ -103,8 +103,29 @@ everywhere and handles the plain-text path cleanly.
 **Trade-offs:** `python-docx` (+lxml) added as a dependency; pandoc is an optional system
 binary. A `.docx` is built for every extraction (small cost on the single worker).
 
+## 2026-06-14 — Delegate legacy Tibetan fully to upstream pdf-cmap-fix
+**Chosen:** Upgrade to `pdf-cmap-fix` @ `007ef5b` and delete our entire legacy
+implementation. `patch_pdf` now repairs legacy non-Unicode Tibetan fonts natively
+(it vendors the tiblegenc tables and identifies obfuscated fonts by glyph outline),
+so we removed `app/legacy_tibetan.py`, dropped the `pytiblegenc` dependency, and
+removed the "Convert legacy Tibetan to Unicode" toggle — conversion is now automatic.
+Extraction repairs the PDF first (`patch_pdf` in memory → temp file → PyMuPDF4LLM),
+so legacy fonts come out as correct Unicode without a separate code path.
+**Supersedes:** the three earlier legacy decisions — "PyMuPDF spans + pytiblegenc.convert_string",
+"inject /ToUnicode CMaps", and "parse tiblegenc.csv with the csv module". Those were a
+faithful reimplementation while upstream lacked the feature; the two fixes we found (CSV
+quoting + building the map from the 1-byte code to cover malformed 2-byte/4-hex ToUnicode)
+were reported upstream and are now fixed there. Kept in git history (commit `5374aad`) as a
+reference for the upstream author.
+**Why:** Avoid maintaining a parallel implementation. Upstream is the source of truth, is
+maintained, and now has broader coverage (glyph-outline ID for obfuscated fonts) than our
+name-based matching ever did.
+**Trade-offs:** We now track an upstream commit pin; legacy coverage gaps must be fixed
+upstream rather than locally. Verified zero regression on the real TibetanChogyal PDF
+(0 quotes / 0 PUA across 168 pages; extraction returns correct Unicode).
+**Revisit if:** We need a legacy font upstream doesn't yet handle and can't wait for a fix.
+
 ## Uncertainties left for the user to confirm on return
-- Legacy Tibetan conversion (both text + PDF) is **experimental** — needs validation
-  against real legacy-font PDFs (none available during the autonomous build).
-- Whether Markdown (current) or plain text should be the default extraction format.
+- ~~Legacy Tibetan conversion is experimental~~ — resolved: handled automatically by
+  upstream `pdf-cmap-fix`, validated on a real PDF (see the 2026-06-14 decision above).
 - Queue TTL (15 min) and memory ceiling assumptions.
