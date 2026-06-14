@@ -2,83 +2,77 @@
 
 *Copy, paste and search Tibetan PDFs — at last.*
 
-A lightweight, modern web app around OpenPecha's
-[`pdf-cmap-fix`](https://github.com/OpenPecha/pdf-cmap-fix) CLI.
+A small, fast, **100% client-side** web app that repairs Tibetan PDFs so their text
+copies, pastes and searches correctly. The whole fix runs in your browser via
+[Pyodide](https://pyodide.org/) running OpenPecha's
+[`pdf-cmap-fix`](https://github.com/OpenPecha/pdf-cmap-fix) — **your file is never
+uploaded; it never leaves your device.** No server, hostable on GitHub Pages.
 
 Many Tibetan PDFs render perfectly on screen but copy/paste and extract as gibberish,
-because the embedded font's `/ToUnicode` character map is broken or missing. Easy Tibetan Copy
-repairs that map so the text comes out correct — and can also extract clean text for you.
+because the embedded font's `/ToUnicode` character map is broken or missing. Easy
+Tibetan Copy repairs that map so the text comes out as correct Unicode.
 
 ## What it does
 
-- **Fix the PDF** — repairs the `/ToUnicode` CMap (via `pdf-cmap-fix`) so copy-paste,
-  search and extraction return correct Unicode. Download the fixed PDF. Pre-Unicode
-  **legacy Tibetan fonts** (TibetanChogyal, Ededris/Dedris, …) are handled automatically
-  by `pdf-cmap-fix` — no toggle, no extra step.
-- **Extract text** — pulls clean, structured **Markdown** out of the PDF
-  (via [PyMuPDF4LLM](https://pymupdf.readthedocs.io/en/latest/pymupdf4llm/)), with an
-  option to take **only odd or only even pages** (handy for pecha-style books). The PDF is
-  repaired first, so legacy fonts come out as correct Unicode. Download it as `.md`/`.txt`
-  or as a formatting-preserving **Word `.docx`** (rendered with
-  [pandoc](https://pandoc.org/) when installed, otherwise `python-docx`).
+- **Fix the PDF** — repairs the `/ToUnicode` CMap so copy-paste, search and
+  extraction return correct Unicode. Download the fixed PDF. Pre-Unicode **legacy
+  Tibetan fonts** (TibetanChogyal, Ededris/Dedris, …) are handled automatically by
+  `pdf-cmap-fix` (it vendors the BDRC tiblegenc tables and identifies obfuscated fonts
+  by glyph outline) — no toggle, no extra step.
+- **Extract text** — pulls clean Unicode text out of the PDF, with an option to take
+  **only odd or only even pages** (handy for pecha-style books printed two-up). The PDF
+  is repaired first, so legacy fonts come out as correct Unicode. Download it as `.txt`
+  or as a **Word `.docx`**.
 
-## Design constraints (built in)
+## How it works
 
-- **5 MB** upload limit.
-- **One PDF processed at a time**, with a **50-slot waiting queue**; when full, callers
-  are asked to retry shortly.
-- **Nothing kept on disk.** Uploads touch a temp file only during processing (the
-  libraries open by path), which is deleted immediately afterwards. Results live in
-  memory and the fixed PDF is **wiped the moment you download it**; anything not
-  downloaded is swept after 15 minutes.
+```
+web/index.html        UI
+web/app.js            state machine (upload → configure → process → result)
+web/worker.js         Web Worker: Pyodide + pdf-cmap-fix + python-docx
+web/sw.js             service worker — caches Pyodide + the wheel for fast repeat loads
+web/wheels/           the pdf-cmap-fix wheel (built by scripts/build-wheel.sh; gitignored)
+```
 
-## Run it
+The UI thread hands the PDF bytes to a **Web Worker** running Pyodide 0.29.4 (which
+bundles PyMuPDF 1.26.3 + fonttools); the worker `micropip`-installs the pure-python
+`pdf-cmap-fix` wheel and `python-docx`, fixes/extracts in memory, and hands the result
+bytes back for download. Nothing is sent over the network except the Pyodide runtime
+and the wheel (both cached by the service worker after the first visit).
+
+## Run it locally
 
 ```bash
-./run.sh                 # creates .venv, installs deps, starts on http://127.0.0.1:8000
-# or pick a port:
-PORT=9000 ./run.sh
+./scripts/build-wheel.sh          # builds web/wheels/pdf_cmap_fix-...whl (needs python3 + pip + git)
+cd web && python3 -m http.server  # then open http://localhost:8000
 ```
 
-Manual equivalent:
+Any static file server works — there is no build step and no backend.
 
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
+## Deployment (GitHub Pages)
 
-Then open the printed URL.
+Pushing to `main` triggers [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml),
+which builds the wheel and deploys `web/` to GitHub Pages.
 
-## Architecture
+**One-time setup:** in the repo settings, enable **Pages** with the **“GitHub Actions”**
+source.
 
-```
-app/
-  main.py            FastAPI: API + serves the static SPA, 5 MB cap, two-phase flow
-  queue_manager.py   single-worker asyncio queue (50 slots), in-memory jobs, TTL sweep
-  processing.py      the heavy work: analyze / fix / extract  (runs in a thread pool)
-  docx_export.py     render extracted text to .docx (pandoc, python-docx fallback)
-web/
-  index.html  styles.css  app.js   no build step — plain, fast, hand-crafted
-```
+## Notes & limits
 
-**Request flow:** `POST /api/analyze` (inspect fonts, stage bytes, return a token) →
-`POST /api/jobs` (`{token, mode, pages}`) → poll `GET /api/jobs/{id}` →
-`GET /api/jobs/{id}/download` (streams the PDF — or `?format=docx` — then evicts it).
+- **Large files:** everything runs in your browser's memory. Files over ~20 MB trigger a
+  warning (the tab can run out of memory and crash) but can be processed anyway — a
+  desktop computer is recommended for big PDFs. Typical Tibetan text PDFs (a few MB) are
+  comfortable, including on mobile.
+- **Markdown export is not available** in the browser build: `pymupdf4llm` requires a
+  newer PyMuPDF than Pyodide currently bundles. Text extraction uses `pdf-cmap-fix`'s own
+  clean-Unicode extraction (`.txt` / `.docx`).
+- Coverage of legacy fonts depends on the font being known to `pdf-cmap-fix`; report
+  fonts that don't convert upstream at
+  [OpenPecha/pdf-cmap-fix](https://github.com/OpenPecha/pdf-cmap-fix).
 
-See [`DECISIONS.md`](DECISIONS.md) for the reasoning behind each choice.
+## Credits & license
 
-## Status / caveats
-
-- The **core fix and extraction paths are tested** end-to-end (API + browser).
-- **Legacy Tibetan** is repaired by `pdf-cmap-fix` itself (it vendors the BDRC tiblegenc
-  tables and identifies obfuscated fonts by glyph outline). Validated on a real
-  `TibetanChogyal` PDF: copy-paste returns correct Unicode, clean across all pages.
-  Coverage depends on the font being known to `pdf-cmap-fix`; report fonts that don't convert
-  upstream at [OpenPecha/pdf-cmap-fix](https://github.com/OpenPecha/pdf-cmap-fix).
-- The queue is in-process: state is per-instance and not shared across workers, so run a
-  single Uvicorn worker (the default here).
-
-## Licenses
-
-This wrapper is under the repository's `LICENSE`. It depends on `pdf-cmap-fix` (MIT).
+Wraps [OpenPecha/pdf-cmap-fix](https://github.com/OpenPecha/pdf-cmap-fix) (MIT). This
+wrapper is under the repository's [`LICENSE`](LICENSE). See
+[`DECISIONS.md`](DECISIONS.md) and
+[`docs/superpowers/specs/`](docs/superpowers/specs/) for the reasoning behind the design.
