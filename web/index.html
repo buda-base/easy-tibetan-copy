@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Easy Tibetan Copy — Copy, paste and search Tibetan PDFs</title>
   <meta name="description" content="Copy, paste and search Tibetan PDFs — at last. Repairs the hidden character map so Tibetan text comes out right." />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="styles.css" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%93%BF%3C/text%3E%3C/svg%3E" />
 </head>
 <body>
@@ -24,7 +24,7 @@
       </div>
       <div class="byline">
         Wraps <a href="https://github.com/OpenPecha/pdf-cmap-fix" target="_blank" rel="noopener">OpenPecha · pdf-cmap-fix</a><br/>
-        Your file never leaves this server.
+        Runs entirely in your browser — your file is never uploaded.
       </div>
     </header>
 
@@ -47,7 +47,7 @@
           </div>
           <h3>Drop a PDF here</h3>
           <p>or click to choose a file</p>
-          <span class="pill" id="limit-pill">PDF · up to 5 MB</span>
+          <span class="pill" id="limit-pill">PDF · best under 20 MB</span>
           <input type="file" id="file" accept="application/pdf,.pdf" hidden />
         </div>
       </section>
@@ -61,7 +61,6 @@
           <div class="mandala"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="dot"></div></div>
           <h3 id="proc-title">Working on it…</h3>
           <p id="proc-sub">Repairing the character map.</p>
-          <div id="proc-queue" hidden></div>
         </div>
       </section>
 
@@ -85,11 +84,11 @@
     </main>
 
     <footer>
-      Files are processed one at a time and held only in memory — deleted right after you download.
+      Everything runs in your browser. Your file is never uploaded — it never leaves your device.
     </footer>
   </div>
 
   <div class="toast" id="toast"></div>
-  <script src="/app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
