@@ -6,7 +6,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Pinned, validated commit of pdf-cmap-fix (bundles the legacy tiblegenc tables).
-PIN=007ef5b8744d4fed8f0c5ddd2eb445b0f8a02600
+# 103977e = merge of PR #14: synthesize ToUnicode for legacy fonts with none
+# (Type1/CFF + symbolic subsets) — fixes "N fonts found, 0 fixed" PDFs.
+PIN=103977ebc50626819df2c4b6e9df61af1f07fa60
 OUT=web/wheels
 
 mkdir -p "$OUT"
