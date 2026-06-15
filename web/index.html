@@ -1,87 +1,157 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Easy Tibetan Copy — Copy, paste and search Tibetan PDFs</title>
-  <meta name="description" content="Copy, paste and search Tibetan PDFs — at last. Repairs the hidden character map so Tibetan text comes out right." />
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%93%BF%3C/text%3E%3C/svg%3E" />
-</head>
-<body>
-  <div class="wrap">
-    <header>
-      <div class="brand">
-        <div>
-          <b>Easy Tibetan Copy</b>
-          <span>Copy, paste and search Tibetan PDFs — at last.</span>
-        </div>
-      </div>
-      <div class="byline">
-        Wraps <a href="https://github.com/OpenPecha/pdf-cmap-fix" target="_blank" rel="noopener">OpenPecha · pdf-cmap-fix</a>
-      </div>
-    </header>
-
-    <section class="hero">
-      <h1 class="reveal d2">Make your Tibetan PDFs<br/><em>actually readable</em>.</h1>
-      <p class="reveal d3">Many Tibetan PDFs render beautifully yet copy as gibberish. Easy Tibetan Copy repairs the
-        hidden character map so the text comes out right — and can extract clean text for you.</p>
-    </section>
-
-    <main class="stage">
-
-      <!-- STATE: upload -->
-      <section id="view-upload" class="view">
-        <div class="drop reveal d4" id="drop" tabindex="0" role="button" aria-label="Upload a PDF">
-          <div class="drop-ico">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 16V4"/><path d="m6 10 6-6 6 6"/><path d="M4 20h16"/>
-            </svg>
-          </div>
-          <h3>Drop a PDF here</h3>
-          <p>or click to choose a file</p>
-          <span class="pill" id="limit-pill">PDF · best under 20 MB</span>
-          <input type="file" id="file" accept="application/pdf,.pdf" hidden />
-        </div>
-      </section>
-
-      <!-- STATE: configure -->
-      <section id="view-config" class="view" hidden></section>
-
-      <!-- STATE: processing -->
-      <section id="view-processing" class="view" hidden>
-        <div class="panel processing">
-          <div class="mandala"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="dot"></div></div>
-          <h3 id="proc-title">Working on it…</h3>
-          <p id="proc-sub">Repairing the character map.</p>
-        </div>
-      </section>
-
-      <!-- STATE: result -->
-      <section id="view-result" class="view" hidden></section>
-
-      <!-- STATE: error -->
-      <section id="view-error" class="view" hidden>
-        <div class="panel err">
-          <div class="x">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-          </div>
-          <h3 id="err-title">Something went wrong</h3>
-          <p id="err-msg"></p>
-          <div class="btn-actions" style="justify-content:center">
-            <button class="btn btn-ghost" onclick="App.reset()">Start over</button>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Easy Tibetan Copy — Copy, paste and search Tibetan PDFs</title>
+    <meta
+      name="description"
+      content="Copy, paste and search Tibetan PDFs — at last. Repairs the hidden character map so Tibetan text comes out right.">
+    <link rel="stylesheet" href="styles.css">
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%93%BF%3C/text%3E%3C/svg%3E">
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="brand">
+          <div>
+            <b>Easy Tibetan Copy</b>
+            <span>Copy, paste and search Tibetan PDFs — at last.</span>
           </div>
         </div>
+        <div class="byline">
+          Everything runs in your browser.<br>Your file never leaves your
+          device.
+        </div>
+      </header>
+
+      <section class="hero">
+        <h1 class="reveal d2">
+          Make your Tibetan PDFs<br><em>actually readable</em>.
+        </h1>
+        <p class="reveal d3">
+          Many Tibetan PDFs render beautifully yet copy as gibberish. Easy
+          Tibetan Copy repairs the hidden character map so the text comes out
+          right — and can extract clean text for you.
+        </p>
       </section>
 
-    </main>
+      <main class="stage">
+        <!-- STATE: upload -->
+        <section id="view-upload" class="view">
+          <div
+            class="drop reveal d4"
+            id="drop"
+            tabindex="0"
+            role="button"
+            aria-label="Upload a PDF"
+          >
+            <div class="drop-ico">
+              <svg
+                width="30"
+                height="30"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 16V4" />
+                <path d="m6 10 6-6 6 6" />
+                <path d="M4 20h16" />
+              </svg>
+            </div>
+            <h3>Drop a PDF here</h3>
+            <p>or click to choose a file</p>
+            <span class="pill" id="limit-pill">PDF · best under 20 MB</span>
+            <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+          </div>
+        </section>
 
-    <footer>
-      Everything runs in your browser. Your file is never uploaded — it never leaves your device.
-    </footer>
-  </div>
+        <!-- STATE: configure -->
+        <section id="view-config" class="view" hidden></section>
 
-  <div class="toast" id="toast"></div>
-  <script src="app.js"></script>
-</body>
+        <!-- STATE: processing -->
+        <section id="view-processing" class="view" hidden>
+          <div class="panel processing">
+            <div class="mandala">
+              <div class="ring r1"></div>
+              <div class="ring r2"></div>
+              <div class="ring r3"></div>
+              <div class="dot"></div>
+            </div>
+            <h3 id="proc-title">Working on it…</h3>
+            <p id="proc-sub">Repairing the character map.</p>
+          </div>
+        </section>
+
+        <!-- STATE: result -->
+        <section id="view-result" class="view" hidden></section>
+
+        <!-- STATE: error -->
+        <section id="view-error" class="view" hidden>
+          <div class="panel err">
+            <div class="x">
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+              >
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </div>
+            <h3 id="err-title">Something went wrong</h3>
+            <p id="err-msg"></p>
+            <div class="btn-actions" style="justify-content: center">
+              <button class="btn btn-ghost" onclick="App.reset()">
+                Start over
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <p class="feedback">
+          Still getting a PDF that doesn't come out right?<br>
+          Send it to <a href="mailto:eroux@bdrc.io">eroux@bdrc.io</a>
+          and we'll take a look.
+        </p>
+        <div class="credit">
+          <div class="credit-logos">
+            <a href="https://openpecha.org/" target="_blank" rel="noopener"><img src="images/open-pecha-logo.png" alt="OpenPecha"></a>
+            <a href="https://bdrc.io" target="_blank" rel="noopener"><img src="images/bdrc-logo.png" alt="BDRC"></a>
+            <a href="https://khyentsefoundation.org/" target="_blank" rel="noopener"><img class="kf" src="images/kf.svg" alt="Khyentse Foundation"></a>
+          </div>
+          <p>
+            Web tool created by
+            <a href="https://frerejeremy.me" target="_blank" rel="noopener">Jérémy Frère</a>
+            based on
+            <a
+              href="https://forum.openpecha.org/t/restoring-correct-tibetan-unicode-from-pdfs-by-repairing-their-tounicode-maps/578"
+              target="_blank"
+              rel="noopener"
+              >pdf-cmap-fix</a
+            >
+            developed by
+            <a href="https://openpecha.org/" target="_blank" rel="noopener">OpenPecha</a>
+            for the
+            <a href="https://bdrc.io" target="_blank" rel="noopener">BDRC</a>
+            Etext Corpus project, funded by the
+            <a href="https://khyentsefoundation.org/" target="_blank" rel="noopener">Khyentse Foundation</a>.
+          </p>
+        </div>
+      </footer>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <script src="app.js"></script>
+  </body>
 </html>
