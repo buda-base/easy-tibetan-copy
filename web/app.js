@@ -235,8 +235,8 @@ const App = (() => {
   function renderPdfResult(s, pdfBytes) {
     const statCards = [
       ['Fonts seen', s.fonts_seen],
-      ['Fonts fixed', (s.patched || 0) + (s.upgrades || 0)],
-      ['Already OK', s.no_change],
+      ['Fonts fixed', s.patched],
+      ['Glyphs upgraded', s.upgrades],
     ].map(([label, val]) => `<div class="stat"><b>${val ?? 0}</b><span>${label}</span></div>`).join('');
 
     $('view-result').innerHTML = `

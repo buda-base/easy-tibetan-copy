@@ -57,7 +57,7 @@ async function fix() {
   const stats = await py.runPythonAsync(`
 import json, pdf_cmap_fix
 res = pdf_cmap_fix.patch_pdf("/in.pdf", output_path="/out.pdf", write_file=True)
-json.dumps({k: res.get(k) for k in list(res)[:8]}, default=str)
+json.dumps(res.get("stats", {}), default=str)
 `);
   const out = py.FS.readFile('/out.pdf');
   py.FS.unlink('/out.pdf');
