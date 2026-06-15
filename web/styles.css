@@ -103,13 +103,13 @@ header {
 }
 .hero h1 {
   font-family: 'Fraunces', serif; font-optical-sizing: auto;
-  font-weight: 400; font-size: clamp(2.5rem, 6vw, 4rem); line-height: 1.04;
-  letter-spacing: -.02em; color: var(--ink);
+  font-weight: 400; font-size: clamp(2.05rem, 6vw, 4rem); line-height: 1.04;
+  letter-spacing: -.02em; color: var(--ink); text-wrap: balance;
 }
 .hero h1 em { font-style: italic; color: var(--maroon); }
 .hero p {
   max-width: 30em; margin: 22px auto 0; color: var(--ink-soft);
-  font-size: 1.075rem;
+  font-size: 1.075rem; text-wrap: balance;
 }
 
 /* ----------------------------------------------------------- stage / cards */
@@ -331,6 +331,7 @@ footer .feedback a { border-bottom: 1px solid rgba(138,43,34,.25); }
   .panel { padding: 22px; }
   .choice { grid-template-columns: 1fr; }
   .hero { padding: 36px 0 28px; }
+  .hero h1 br { display: none; }
   header { flex-wrap: wrap; gap: 8px; }
   .byline { width: 100%; text-align: left; }
   .credit-logos img { height: 26px; }
