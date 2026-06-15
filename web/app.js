@@ -215,8 +215,9 @@ const App = (() => {
   }
 
   // ---- step 3: run (in the worker) -----------------------------------------
-  async function submit() {
-    $('go').disabled = true;
+  // Run an operation on the already-loaded file (the worker keeps /in.pdf in its
+  // FS, so fix and extract can be chained without re-uploading or re-booting).
+  async function process() {
     $('proc-title').textContent = state.mode === 'fix' ? 'Repairing your PDF…' : 'Extracting text…';
     $('proc-sub').textContent = 'Working on your document…';
     showView('processing');
@@ -225,10 +226,15 @@ const App = (() => {
         const r = await call('fix');
         renderPdfResult(r.stats || {}, r.pdfBytes);
       } else {
-        const r = await call('extract', { pages: state.pages });
+        const r = await call('extract', { pages: state.pages || 'all' });
         renderTextResult(r);
       }
     } catch (err) { showError(err.message); }
+  }
+
+  function submit() {
+    $('go').disabled = true;
+    process();
   }
 
   // ---- step 4: results -----------------------------------------------------
@@ -246,15 +252,17 @@ const App = (() => {
           <div><h3>Your PDF is fixed</h3><p>Copy-paste and text extraction should now return correct Unicode.</p></div>
         </div>
         <div class="stats">${statCards}</div>
-        <div class="btn-actions">
+        <div class="btn-actions" style="flex-wrap:wrap">
           <button class="btn btn-primary" id="dl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> Download fixed PDF</button>
-          <button class="btn btn-ghost" onclick="App.reset()">Do another</button>
+          <button class="btn btn-ghost" id="to-extract"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> Extract text</button>
+          <button class="btn btn-ghost" onclick="App.reset()" style="margin-left:auto">Do another</button>
         </div>
       </div>`;
     $('dl').addEventListener('click', () => {
       download(pdfBytes, baseName() + '.fixed.pdf', 'application/pdf');
       toast('Downloaded.');
     });
+    $('to-extract').addEventListener('click', () => { state.mode = 'extract'; process(); });
     showView('result');
   }
 
@@ -305,7 +313,8 @@ const App = (() => {
           <button class="btn btn-ghost" id="copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</button>
           <button class="btn btn-ghost" id="save"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> .txt</button>
           <button class="btn btn-ghost" id="save-docx"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> .docx</button>
-          <button class="btn btn-ghost" onclick="App.reset()" style="margin-left:auto">Do another</button>
+          <button class="btn btn-ghost" id="to-fix" style="margin-left:auto"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg> Fix the PDF</button>
+          <button class="btn btn-ghost" onclick="App.reset()">Do another</button>
         </div>
       </div>`;
     $('copy').addEventListener('click', async () => {
@@ -319,6 +328,7 @@ const App = (() => {
       download(r.docxBytes, baseName() + '.docx',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     });
+    $('to-fix').addEventListener('click', () => { state.mode = 'fix'; process(); });
     showView('result');
   }
 
