@@ -138,6 +138,7 @@ export function rtfToBlocks(rtf) {
   let run = { text: "", font: null, size: null, bold: false, italic: false };
   const st = [{ font: null, size: null, bold: false, italic: false, ignore: false }];
   const cur = () => st[st.length - 1];
+  let ucSkip = 1, skipChars = 0; // \ucN: fallback chars to drop after each \uN
 
   function flushRun() {
     if (run.text) {
@@ -163,6 +164,7 @@ export function rtfToBlocks(rtf) {
   }
   function add(ch) {
     if (cur().ignore) return;
+    if (skipChars > 0) { skipChars--; return; } // \uN fallback char: drop it
     sync();
     run.text += ch;
   }
@@ -212,7 +214,8 @@ export function rtfToBlocks(rtf) {
         else if (word === "ql") para.align = "left";
         else if (IGNORE_DEST.has(word.toLowerCase())) c0.ignore = true;
         else if (isSym(word)) add(tableFor(c0.font) ? symLegacyChar(word, mac) : SYM_CHAR[word]);
-        else if (word === "u" && num !== "") { add(String.fromCodePoint(parseInt(num, 10) & 0xffff)); }
+        else if (word === "uc") { ucSkip = parseInt(num || "1", 10); }
+        else if (word === "u" && num !== "") { add(String.fromCodePoint(parseInt(num, 10) & 0xffff)); skipChars = ucSkip; }
         i = j;
       } else { i += 2; }
     } else if (c === "\r" || c === "\n") { i++; }
