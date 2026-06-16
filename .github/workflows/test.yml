@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build the bundled pdf-cmap-fix wheel
+        run: ./scripts/build-wheel.sh
+
+      - name: Install wheel + runtime deps
+        run: pip install web/wheels/*.whl pymupdf fonttools pytest
+
+      - name: PDF repair regression test
+        run: python -m pytest tests/test_pdf_repair.py -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: RTF converter regression test
+        run: node tests/test_rtf_convert.mjs
