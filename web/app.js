@@ -113,7 +113,7 @@ const App = (() => {
   // loaded on demand — it needs no Pyodide, so docx/rtf stay lightweight.
   let _lib = null;
   function loadLib() {
-    if (!_lib) _lib = import('./vendor/tibetan-ansi-to-unicode/index.js');
+    if (!_lib) _lib = import('./vendor/tibetan-ansi-to-unicode/index.js?v=__BUILD__');
     return _lib;
   }
 
@@ -349,30 +349,43 @@ const App = (() => {
 
   // ---- step 4: results -----------------------------------------------------
   function renderPdfResult(s, pdfBytes) {
+    const seen = s.fonts_seen || 0;
+    const fixed = s.patched || 0;
+    const noMatch = s.no_match ?? Math.max(0, seen - fixed - (s.no_change || 0));
+    const ok = fixed > 0;
+
     const statCards = [
-      ['Fonts seen', s.fonts_seen],
-      ['Fonts fixed', s.patched],
-      ['Glyphs upgraded', s.upgrades],
+      ['Fonts seen', seen],
+      ['Fonts fixed', fixed],
+      ok ? ['Glyphs upgraded', s.upgrades || 0] : ['Not recognised', noMatch],
     ].map(([label, val]) => `<div class="stat"><b>${val ?? 0}</b><span>${label}</span></div>`).join('');
+
+    const head = ok
+      ? `<div class="badge-ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>
+          <div><h3>Your PDF is fixed</h3><p>Copy-paste and text extraction should now return correct Unicode.</p></div>`
+      : `<div class="badge-warn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v6"/><path d="M12 17h.01"/></svg></div>
+          <div><h3>This PDF couldn't be repaired</h3><p>None of its ${seen} fonts are in our recognition database, so its Tibetan can't be turned into Unicode. This file uses legacy fonts we don't cover yet.</p></div>`;
+
+    const actions = ok
+      ? `<button class="btn btn-primary" id="dl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> Download fixed PDF</button>
+          <button class="btn btn-accent" id="to-extract"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> Extract text</button>
+          <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Do another</button>`
+      : `<a class="btn btn-accent" href="mailto:eroux@bdrc.io?subject=${encodeURIComponent('Unsupported Tibetan PDF')}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="m22 7-10 6L2 7"/></svg> Send us this PDF</a>
+          <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Try another</button>`;
 
     $('view-result').innerHTML = `
       <div class="panel swap-enter">
-        <div class="result-head">
-          <div class="badge-ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>
-          <div><h3>Your PDF is fixed</h3><p>Copy-paste and text extraction should now return correct Unicode.</p></div>
-        </div>
+        <div class="result-head">${head}</div>
         <div class="stats">${statCards}</div>
-        <div class="btn-actions" style="flex-wrap:wrap">
-          <button class="btn btn-primary" id="dl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> Download fixed PDF</button>
-          <button class="btn btn-accent" id="to-extract"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> Extract text</button>
-          <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Do another</button>
-        </div>
+        <div class="btn-actions" style="flex-wrap:wrap">${actions}</div>
       </div>`;
-    $('dl').addEventListener('click', () => {
-      download(pdfBytes, baseName() + '.fixed.pdf', 'application/pdf');
-      toast('Downloaded.');
-    });
-    $('to-extract').addEventListener('click', () => { state.mode = 'extract'; process(); });
+    if (ok) {
+      $('dl').addEventListener('click', () => {
+        download(pdfBytes, baseName() + '.fixed.pdf', 'application/pdf');
+        toast('Downloaded.');
+      });
+      $('to-extract').addEventListener('click', () => { state.mode = 'extract'; process(); });
+    }
     showView('result');
   }
 

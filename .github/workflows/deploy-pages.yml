@@ -28,7 +28,12 @@ jobs:
         run: ./scripts/build-wheel.sh
 
       - name: Stamp cache-busting build id into asset URLs
-        run: sed -i "s/__BUILD__/${GITHUB_SHA::8}/g" web/index.html web/app.js
+        run: |
+          sed -i "s/__BUILD__/${GITHUB_SHA::8}/g" web/index.html web/app.js
+          # Key the service-worker wheel cache to the wheel's content, so a
+          # changed wheel evicts the stale one for returning visitors.
+          wheel_hash=$(sha256sum web/wheels/pdf_cmap_fix-*.whl | cut -c1-12)
+          sed -i "s/__WHEEL_HASH__/${wheel_hash}/g" web/sw.js
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
