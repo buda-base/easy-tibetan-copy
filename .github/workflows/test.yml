@@ -22,8 +22,8 @@ jobs:
       - name: Install wheel + runtime deps
         run: pip install web/wheels/*.whl pymupdf fonttools pytest
 
-      - name: PDF repair regression test
-        run: python -m pytest tests/test_pdf_repair.py -q
+      - name: Python regression tests (PDF repair + issue #16 escalation)
+        run: python -m pytest tests/ -q
 
       - uses: actions/setup-node@v4
         with:

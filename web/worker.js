@@ -27,7 +27,54 @@ async function boot() {
 import micropip
 await micropip.install("${WHEEL}")
 await micropip.install("python-docx", deps=False)
-import pdf_cmap_fix
+import os, shutil, pdf_cmap_fix, pymupdf
+
+# Escalation over the two GID lookup trees bundled in the wheel. The default gid
+# tree runs first; if its patched output still extracts non-Tibetan "junk"
+# (legacy fonts that map glyphs into e.g. the Thai block — issue #16), retry with
+# the PUA-free tree and keep whichever output has the least junk, then the most
+# Tibetan. This mirrors the upstream auto-strategy picker, scoped to the two
+# trees we can afford to ship to the browser.
+_PUA_FREE = pdf_cmap_fix.FONT_LOOKUP_DIR.parent / "font_lookup_gid_pua_free"
+
+def _score_pdf(path):
+    # Count real Tibetan vs leftover non-Tibetan-non-ASCII characters in the
+    # extracted text. junk == 0 means the file now copy-pastes cleanly.
+    d = pymupdf.open(path)
+    tib = junk = 0
+    for p in range(d.page_count):
+        for c in d[p].get_text():
+            o = ord(c)
+            if 0x0F00 <= o <= 0x0FFF:
+                tib += 1
+            elif o > 0x7F:
+                junk += 1
+    d.close()
+    return tib, junk
+
+def _patch_best(src, dst):
+    res = pdf_cmap_fix.patch_pdf(src, output_path=dst, write_file=True)
+    stats = dict(res.get("stats", {}))
+    tib, junk = _score_pdf(dst)
+    strategy = "gid"
+    if junk > 0 and _PUA_FREE.is_dir():
+        cand = "/_cand_pua.pdf"
+        res2 = pdf_cmap_fix.patch_pdf(src, output_path=cand, write_file=True,
+                                      font_lookup_dir=_PUA_FREE)
+        tib2, junk2 = _score_pdf(cand)
+        # Prefer the output with the least junk, breaking ties on most Tibetan.
+        if (junk2, -tib2) < (junk, -tib):
+            shutil.copyfile(cand, dst)
+            stats = dict(res2.get("stats", {}))
+            tib, junk, strategy = tib2, junk2, "gid-pua-free"
+        try:
+            os.unlink(cand)
+        except OSError:
+            pass
+    stats["tibetan_chars"] = tib
+    stats["junk_chars"] = junk
+    stats["strategy"] = strategy
+    return stats
 `);
     post('progress', { phase: 'ready' });
     return py;
@@ -63,24 +110,13 @@ json.dumps({"page_count": d.page_count, "fonts": fonts,
 
 async function fix() {
   post('progress', { phase: 'working' });
+  // _patch_best (defined at boot) runs gid, then escalates to the PUA-free tree
+  // if the output still extracts junk; it returns stats plus tibetan_chars,
+  // junk_chars, and the winning strategy. junk_chars drives the honest result
+  // message: "fixed" (junk 0) vs "partially repaired" (junk left).
   const stats = await py.runPythonAsync(`
-import json, pdf_cmap_fix, pymupdf
-res = pdf_cmap_fix.patch_pdf("/in.pdf", output_path="/out.pdf", write_file=True)
-_stats = res.get("stats", {})
-# How much real Tibetan Unicode does the resulting file already yield? Lets the
-# UI tell "already fine" (valid Unicode, nothing to fix) apart from "unsupported
-# legacy fonts" — both produce patched == 0 but mean opposite things. Capped: we
-# only need to know whether there's a meaningful amount, not the exact count.
-_d = pymupdf.open("/out.pdf")
-_tib = 0
-for _p in range(_d.page_count):
-    for _c in _d[_p].get_text():
-        if '\\u0f00' <= _c <= '\\u0fff':
-            _tib += 1
-    if _tib >= 64:
-        break
-_d.close()
-_stats["tibetan_chars"] = _tib
+import json
+_stats = _patch_best("/in.pdf", "/out.pdf")
 json.dumps(_stats, default=str)
 `);
   const out = py.FS.readFile('/out.pdf');
@@ -139,7 +175,9 @@ def _set_font(run, name):
     for a in ('w:ascii', 'w:hAnsi', 'w:cs'):
         rfonts.set(qn(a), name)
 
-pdf_cmap_fix.patch_pdf("/in.pdf", output_path="/patched.pdf", write_file=True)
+# Same gid -> PUA-free escalation as the fix path, so the extracted text/.docx
+# use whichever lookup tree yields the least junk (issue #16).
+_patch_best("/in.pdf", "/patched.pdf")
 d = pymupdf.open("/patched.pdf")
 n = d.page_count
 sel = list(range(n))
