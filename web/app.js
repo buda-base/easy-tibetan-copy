@@ -356,36 +356,53 @@ const App = (() => {
     const fixed = s.patched || 0;
     const noMatch = s.no_match ?? Math.max(0, seen - fixed - (s.no_change || 0));
     const tibetan = s.tibetan_chars || 0;
-    const ok = fixed > 0;
-    // patched === 0 is ambiguous: either the file already yields valid Unicode
-    // (nothing to fix) or its fonts aren't recognised. Real Tibetan in the
-    // output text tells the two apart — without it we'd cry "broken" on a file
-    // that already copy-pastes fine (e.g. Unicode-native Jomolhari).
-    const alreadyOk = !ok && tibetan >= 8;
+    const junk = s.junk_chars || 0;
+    // junk = characters that still extract as non-Tibetan, non-ASCII after the
+    // worker tried both the gid and PUA-free trees — the honest "does this copy
+    // cleanly" signal. 0 = clean; >0 = some runs are still garbled. Issue #16
+    // used to slip through as a false "all good" because we only counted real
+    // Tibetan and never noticed the leftover garbage.
+    const hasTibetan = tibetan >= 8;
+    const phase =
+      junk === 0 && fixed > 0  ? 'ok' :       // repaired and now clean
+      junk === 0 && hasTibetan ? 'already' :  // was already valid Unicode
+      hasTibetan               ? 'partial' :  // some Tibetan recovered, junk remains
+                                 'cant';        // nothing usable came out
+    const ok = phase === 'ok';
 
     const statCards = (
-      ok        ? [['Fonts seen', seen], ['Fonts fixed', fixed], ['Glyphs upgraded', s.upgrades || 0]] :
-      alreadyOk ? [['Fonts seen', seen], ['Already Unicode', '✓']] :
-                  [['Fonts seen', seen], ['Fonts fixed', fixed], ['Not recognised', noMatch]]
+      phase === 'ok'      ? [['Fonts seen', seen], ['Fonts fixed', fixed], ['Glyphs upgraded', s.upgrades || 0]] :
+      phase === 'already' ? [['Fonts seen', seen], ['Already Unicode', '✓']] :
+      phase === 'partial' ? [['Fonts seen', seen], ['Fonts fixed', fixed], ['Still garbled', junk]] :
+                            [['Fonts seen', seen], ['Fonts fixed', fixed], ['Not recognised', noMatch]]
     ).map(([label, val]) => `<div class="stat"><b>${val ?? 0}</b><span>${label}</span></div>`).join('');
 
+    const badgeOk = `<div class="badge-ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>`;
+    const badgeWarn = `<div class="badge-warn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v6"/><path d="M12 17h.01"/></svg></div>`;
+
     const head =
-      ok ? `<div class="badge-ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>
+      phase === 'ok' ? `${badgeOk}
           <div><h3>Your PDF is fixed</h3><p>Copy-paste and text extraction should now return correct Unicode.</p></div>`
-    : alreadyOk ? `<div class="badge-ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>
+    : phase === 'already' ? `${badgeOk}
           <div><h3>This PDF is already fine</h3><p>Its Tibetan already extracts as correct Unicode — copy-paste and search work as-is, no repair needed. You can still extract the text below.</p></div>`
-    : `<div class="badge-warn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v6"/><path d="M12 17h.01"/></svg></div>
+    : phase === 'partial' ? `${badgeWarn}
+          <div><h3>Partially repaired</h3><p>Most of the Tibetan now copies as correct Unicode, but ${junk} character${junk === 1 ? '' : 's'} across some fonts still aren't recognised — those parts may copy as garbage. This file mixes legacy fonts we don't fully cover yet.</p></div>`
+    : `${badgeWarn}
           <div><h3>This PDF couldn't be repaired</h3><p>None of its ${seen} fonts are in our recognition database, so its Tibetan can't be turned into Unicode. This file uses legacy fonts we don't cover yet.</p></div>`;
 
     const extractBtn = `<button class="btn btn-accent" id="to-extract"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> Extract text</button>`;
+    const dlBtn = `<button class="btn btn-primary" id="dl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> Download fixed PDF</button>`;
+    // 'partial' / 'cant' files are exactly what a future "try harder" pass
+    // (lazy-loaded gshape tree) would target; for now we invite the user to send
+    // the file so coverage can be extended.
+    const sendBtn = `<a class="btn btn-accent" href="mailto:eroux@bdrc.io?subject=${encodeURIComponent('Unsupported Tibetan PDF')}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="m22 7-10 6L2 7"/></svg> Send us this PDF</a>`;
+    const doAnother = `<button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Do another</button>`;
 
     const actions =
-      ok ? `<button class="btn btn-primary" id="dl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> Download fixed PDF</button>
-          ${extractBtn}
-          <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Do another</button>`
-    : alreadyOk ? `${extractBtn}
-          <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Do another</button>`
-    : `<a class="btn btn-accent" href="mailto:eroux@bdrc.io?subject=${encodeURIComponent('Unsupported Tibetan PDF')}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="m22 7-10 6L2 7"/></svg> Send us this PDF</a>
+      phase === 'ok'      ? `${dlBtn} ${extractBtn} ${doAnother}` :
+      phase === 'already' ? `${extractBtn} ${doAnother}` :
+      phase === 'partial' ? `${dlBtn} ${extractBtn} ${sendBtn} ${doAnother}` :
+                            `${sendBtn}
           <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Try another</button>`;
 
     $('view-result').innerHTML = `
@@ -394,7 +411,7 @@ const App = (() => {
         <div class="stats">${statCards}</div>
         <div class="btn-actions" style="flex-wrap:wrap">${actions}</div>
       </div>`;
-    if (ok) {
+    if ($('dl')) {
       $('dl').addEventListener('click', () => {
         download(pdfBytes, baseName() + '.fixed.pdf', 'application/pdf');
         toast('Downloaded.');

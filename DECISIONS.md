@@ -1,5 +1,28 @@
 # Decisions
 
+## 2026-06-29 — Issue #16: client-side gid → PUA-free escalation
+**Chosen:** Bundle two GID lookup trees in the browser wheel — the default
+`font_lookup_byid` and the `font_lookup_gid_pua_free` variant — and have the
+worker run gid first, then escalate to the PUA-free tree when the gid output
+still extracts non-Tibetan/non-ASCII "junk". The result message is driven by a
+`junk_chars` count (0 = "fixed"/"already fine", >0 = "partially repaired").
+`scripts/build-wheel.sh` was rewritten to clone the pinned commit, sparse-check
+out only those two trees, inject the browser-scoped `package-data`, and build.
+**Alternatives:** (a) Ship the upstream auto-strategy CLI behaviour — but it
+lives only in `cli_main`, not the `patch_pdf` API the worker calls, and it tries
+all six trees including 139M gshape. (b) Bundle gshape for a "try harder" pass.
+(c) Send unfixable files to a server.
+**Why:** The spike proved `gid-pua-free` (≈22M) fixes #16 completely and is
+byte-identical to gshape (139M) for that file, so the cheap tree is enough. The
+worker can pass per-tier `font_lookup_dir` and score itself — no upstream change
+needed. The garbage was Thai-block codepoints (not PUA), so the honest signal is
+`non_tibetan_non_ascii`, which is what the old "count Tibetan only" heuristic missed.
+**Trade-offs:** Wheel grew 6.6M → ~13M (one-time, SW-cached). Affected files pay
+a second patch pass. gshape-only fonts still can't be fixed (show "partially
+repaired"); lazy-loaded gshape is deferred to a follow-up.
+**Revisit if:** Real files need gshape (then lazy-load it on demand), or upstream
+exposes `patch_pdf(strategy=...)` so the worker can stop re-implementing scoring.
+
 ## 2026-06-14 — Backend framework: FastAPI + Uvicorn
 **Chosen:** FastAPI serving both the JSON API and the static frontend.
 **Alternatives:** Flask, Django, a Node backend calling Python as a subprocess.
