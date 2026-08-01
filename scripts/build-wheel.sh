@@ -6,22 +6,28 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Pinned, validated commit of pdf-cmap-fix.
-# f10b8de = main with the auto-select-strategy work. It provides the two GID
-# lookup trees the browser worker uses:
+# 534993e = main with the tier-1 GID corroboration guard. Tier-1 keys are raw
+# GIDs, so a lookup only transfers when the embedded font shares the DB font's
+# glyph order; the library used to pick one on a font-name match alone and apply
+# it unconditionally. A same-named but incompatible release (TibetanChogyalUnicode
+# ships a dozen dated builds) then overwrote an already-correct ToUnicode. Note
+# the worker cannot detect that on its own: rewriting correct Tibetan into *other*
+# Tibetan codepoints leaves junk_chars at 0, so the escalation below stays silent
+# and the file is reported as fixed. It provides the two GID lookup trees the
+# browser worker uses:
 #   - font_lookup_byid          default tier-1 (gid) tree
 #   - font_lookup_gid_pua_free  PUA-free variant — fixes issue #16, where mixed
 #                               legacy fonts otherwise copy as Thai-block garbage
 # (See web/worker.js: gid runs first, and we escalate to the PUA-free tree only
 # when the gid output still extracts non-Tibetan junk.)
-PIN=f10b8de16adbc8e4373cd2d83de2cbb4337b81c5
+PIN=534993e72aee21e59a0de7aa73749cb2eb842981
 OUT=web/wheels
 
 # Browser download budget: bundle ONLY those two GID trees (~25M + ~22M of JSON,
 # ~13M compressed). The gname (28M) and gshape (139M) trees are deliberately
-# excluded — gshape will be lazy-loaded on demand in a follow-up. Upstream's own
-# package-data at this pin still lists the stale `font_lookup` dir and omits
-# byid + pua_free (a packaging bug in upstream), so we inject the correct DATA
-# list below before building rather than trusting upstream's pyproject.
+# excluded — gshape will be lazy-loaded on demand in a follow-up. Upstream fixed
+# its package-data to ship font_lookup_byid at this pin, but still omits the
+# PUA-free tree, so we inject the DATA list below to add it before building.
 read -r -d '' DATA_BLOCK <<'TOML' || true
 pdf_cmap_fix = [
     "data/font_lookup_byid/*.json",
