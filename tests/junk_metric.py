@@ -71,3 +71,11 @@ def junk_fonts(path):
                         names.add(_SUBSET_PREFIX.sub("", span.get("font") or "?"))
     doc.close()
     return sorted(names)
+
+
+def pua_free_dir():
+    """Directory of the wheel's PUA-free GID lookup tree -- the escalation
+    target when the default gid tree still leaves hard junk (issue #16)."""
+    import pdf_cmap_fix
+
+    return pdf_cmap_fix.FONT_LOOKUP_DIR.parent / "font_lookup_gid_pua_free"

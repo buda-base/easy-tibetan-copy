@@ -7,7 +7,9 @@ into the "partially repaired" branch with an orange badge. Any Tibetan PDF
 containing English or Sanskrit hit the same wall.
 
 These tests guard both directions: the false positive must stay dead, and the
-genuine issue #16 garbage must still be caught.
+genuine issue #16 garbage must still be caught. The PUA-free escalation itself
+(default gid leaves Thai-block junk, the PUA-free tree clears it) is guarded
+once, in tests/test_issue16_escalation.py -- do not re-add it here.
 
 Run (in a venv with the repository wheel):
     pip install web/wheels/*.whl pymupdf fonttools
@@ -28,10 +30,7 @@ ALREADY_FIXTURE = os.path.join(HERE, "fixtures", "quartz-spaced-cmap-p1.pdf")
 pdf_cmap_fix = pytest.importorskip(
     "pdf_cmap_fix", reason="install the bundled wheel first: pip install web/wheels/*.whl"
 )
-
-
-def _pua_free_dir():
-    return pdf_cmap_fix.FONT_LOOKUP_DIR.parent / "font_lookup_gid_pua_free"
+import fitz  # noqa: E402  PyMuPDF — a wheel runtime dependency
 
 
 @pytest.mark.parametrize(
@@ -86,26 +85,41 @@ def test_sample_is_capped(tmp_path):
     assert len(sample.split("\n")) <= 3
 
 
-def test_thai_block_garbage_still_counts(tmp_path):
-    # The issue #16 guard must survive the narrowing.
-    out = str(tmp_path / "gid.pdf")
-    pdf_cmap_fix.patch_pdf(BROKEN_FIXTURE, output_path=out, write_file=True)
-    _, junk, _ = score_pdf(out)
-    assert junk > 0, "fixture no longer reproduces issue #16 under the default gid tree"
-
-
 def test_junk_is_attributed_to_the_offending_font(tmp_path):
     out = str(tmp_path / "gid.pdf")
     pdf_cmap_fix.patch_pdf(BROKEN_FIXTURE, output_path=out, write_file=True)
     assert "Monlam Uni OuChan3" in junk_fonts(out)
 
 
-def test_pua_free_clears_the_garbage(tmp_path):
-    out = str(tmp_path / "pua.pdf")
-    pdf_cmap_fix.patch_pdf(
-        BROKEN_FIXTURE, output_path=out, write_file=True, font_lookup_dir=_pua_free_dir()
-    )
-    tib, junk, _ = score_pdf(out)
+class _FakePage:
+    def __init__(self, text):
+        self._text = text
+
+    def get_text(self):
+        return self._text
+
+
+class _FakeDoc:
+    def __init__(self, pages):
+        self._pages = pages
+
+    def __iter__(self):
+        return iter(self._pages)
+
+    def close(self):
+        pass
+
+
+def test_score_pdf_normalises_open_box_in_the_sample(monkeypatch):
+    # U+2423 is not itself hard junk (it is neither PUA, Thai block, nor
+    # U+FFFD), so junk_chars stays 0 whether or not clean() runs -- nothing
+    # else in this suite would notice clean() being dropped from score_pdf.
+    # Feed a page whose only Tibetan line carries a raw open-box glyph and
+    # confirm the sample comes back space-normalised, the way the R3 report
+    # needs it to.
+    fake_doc = _FakeDoc([_FakePage("ཀ␣ཁ")])
+    monkeypatch.setattr(fitz, "open", lambda path: fake_doc)
+    _, junk, sample = score_pdf("unused.pdf")
     assert junk == 0
-    assert tib > 100
-    assert junk_fonts(out) == []
+    assert "␣" not in sample
+    assert sample == "ཀ ཁ"

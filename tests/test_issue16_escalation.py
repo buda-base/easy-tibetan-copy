@@ -19,7 +19,7 @@ import os
 
 import pytest
 
-from junk_metric import junk_fonts, score_pdf
+from junk_metric import pua_free_dir, score_pdf
 
 HERE = os.path.dirname(__file__)
 FIXTURE = os.path.join(HERE, "fixtures", "issue16-p1.pdf")
@@ -33,13 +33,9 @@ pdf_cmap_fix = pytest.importorskip(
 import fitz  # noqa: E402  PyMuPDF — a wheel runtime dependency
 
 
-def _pua_free_dir():
-    return pdf_cmap_fix.FONT_LOOKUP_DIR.parent / "font_lookup_gid_pua_free"
-
-
 def test_wheel_bundles_pua_free_tree():
     # The escalation is dead weight if the wheel build dropped this tree.
-    assert _pua_free_dir().is_dir(), (
+    assert pua_free_dir().is_dir(), (
         "PUA-free tree missing from the wheel — check scripts/build-wheel.sh "
         "package-data still lists data/font_lookup_gid_pua_free"
     )
@@ -55,7 +51,7 @@ def test_default_gid_leaves_thai_block_garbage(tmp_path):
 def test_pua_free_clears_the_garbage(tmp_path):
     out = str(tmp_path / "pua.pdf")
     pdf_cmap_fix.patch_pdf(
-        FIXTURE, output_path=out, write_file=True, font_lookup_dir=_pua_free_dir()
+        FIXTURE, output_path=out, write_file=True, font_lookup_dir=pua_free_dir()
     )
     tib, junk, _ = score_pdf(out)
     assert junk == 0, f"PUA-free tree should leave no garbage, got {junk} junk chars"
