@@ -29,3 +29,6 @@ shot_*.png
 Thumbs.db
 .vscode/
 .idea/
+
+# Visual brainstorming companion (mockups, local only)
+.superpowers/
