@@ -27,7 +27,7 @@ async function boot() {
 import micropip
 await micropip.install("${WHEEL}")
 await micropip.install("python-docx", deps=False)
-import os, shutil, pdf_cmap_fix, pymupdf
+import os, re, shutil, pdf_cmap_fix, pymupdf
 
 # Escalation over the two GID lookup trees bundled in the wheel. The default gid
 # tree runs first; if its patched output still extracts non-Tibetan "junk"
@@ -36,43 +36,83 @@ import os, shutil, pdf_cmap_fix, pymupdf
 # Tibetan. This mirrors the upstream auto-strategy picker, scoped to the two
 # trees we can afford to ship to the browser.
 _PUA_FREE = pdf_cmap_fix.FONT_LOOKUP_DIR.parent / "font_lookup_gid_pua_free"
+_CTRL_PICS = re.compile("[\\u2400-\\u2422\\u2424]")
+_SUBSET_PREFIX = re.compile(r"^[A-Z]{6}\\+")
+
+def _is_hard_junk(cp):
+    # Junk is deliberately narrow: only codepoints that cannot come from
+    # legitimate text. Counting every non-Tibetan codepoint above 0x7F made
+    # every PDF mixing Tibetan with English or Sanskrit report as "partially
+    # repaired" — Sanskrit diacritics, curly quotes and em-dashes are normal.
+    return (0xE000 <= cp <= 0xF8FF     # Private Use Area
+            or 0x0E00 <= cp <= 0x0E7F  # Thai block — the issue #16 signature
+            or cp == 0xFFFD)
+
+def _clean(s):
+    # Legacy fonts map their space glyph to U+2423 OPEN BOX and the /ToUnicode
+    # carries it through; the extraction path already undoes this.
+    return _CTRL_PICS.sub("", s.replace("\\u2423", " "))
 
 def _score_pdf(path):
-    # Count real Tibetan vs leftover non-Tibetan-non-ASCII characters in the
-    # extracted text. junk == 0 means the file now copy-pastes cleanly.
+    # Returns (tibetan, hard junk, sample). The sample is the first 3 lines
+    # carrying Tibetan, capped at 200 chars — collected in this same pass, so
+    # the R3 report costs no extra extraction.
     d = pymupdf.open(path)
     tib = junk = 0
+    sample = []
     for p in range(d.page_count):
-        for c in d[p].get_text():
-            o = ord(c)
-            if 0x0F00 <= o <= 0x0FFF:
-                tib += 1
-            elif o > 0x7F:
-                junk += 1
+        for line in _clean(d[p].get_text()).split("\\n"):
+            has_tib = False
+            for c in line:
+                o = ord(c)
+                if 0x0F00 <= o <= 0x0FFF:
+                    tib += 1; has_tib = True
+                elif _is_hard_junk(o):
+                    junk += 1
+            if has_tib and len(sample) < 3 and line.strip():
+                sample.append(line.strip())
     d.close()
-    return tib, junk
+    return tib, junk, "\\n".join(sample)[:200]
+
+def _junk_fonts(path):
+    # Needs the dict extraction, which is heavier than get_text(). Callers run
+    # this only when junk was actually found, so a clean file never pays for it.
+    d = pymupdf.open(path)
+    names = set()
+    for p in range(d.page_count):
+        for blk in d[p].get_text("dict").get("blocks", []):
+            if blk.get("type", 0) != 0:
+                continue
+            for line in blk.get("lines", []):
+                for span in line.get("spans", []):
+                    if any(_is_hard_junk(ord(c)) for c in _clean(span.get("text", ""))):
+                        names.add(_SUBSET_PREFIX.sub("", span.get("font") or "?"))
+    d.close()
+    return sorted(names)
 
 def _patch_best(src, dst):
     res = pdf_cmap_fix.patch_pdf(src, output_path=dst, write_file=True)
     stats = dict(res.get("stats", {}))
-    tib, junk = _score_pdf(dst)
+    tib, junk, sample = _score_pdf(dst)
     strategy = "gid"
     if junk > 0 and _PUA_FREE.is_dir():
         cand = "/_cand_pua.pdf"
         res2 = pdf_cmap_fix.patch_pdf(src, output_path=cand, write_file=True,
                                       font_lookup_dir=_PUA_FREE)
-        tib2, junk2 = _score_pdf(cand)
+        tib2, junk2, sample2 = _score_pdf(cand)
         # Prefer the output with the least junk, breaking ties on most Tibetan.
         if (junk2, -tib2) < (junk, -tib):
             shutil.copyfile(cand, dst)
             stats = dict(res2.get("stats", {}))
-            tib, junk, strategy = tib2, junk2, "gid-pua-free"
+            tib, junk, sample, strategy = tib2, junk2, sample2, "gid-pua-free"
         try:
             os.unlink(cand)
         except OSError:
             pass
     stats["tibetan_chars"] = tib
     stats["junk_chars"] = junk
+    stats["sample"] = sample
+    stats["junk_fonts"] = _junk_fonts(dst) if junk > 0 else []
     stats["strategy"] = strategy
     return stats
 `);

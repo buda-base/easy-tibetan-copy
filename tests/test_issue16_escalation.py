@@ -8,7 +8,8 @@ counted recovered Tibetan and never the leftover junk.
 The fix: bundle the PUA-free gid tree in the wheel and, when the gid output
 still extracts non-Tibetan/non-ASCII "junk", escalate to it. This test guards
 both halves — that the wheel ships the PUA-free tree, and that it clears the
-junk where plain gid does not. It mirrors `_patch_best` in web/worker.js.
+junk where plain gid does not. Scoring lives in `tests/junk_metric.py`, which
+mirrors `web/worker.js`.
 
 Run (after `pip install web/wheels/*.whl pymupdf fonttools`):
     python -m pytest tests/test_issue16_escalation.py -q
@@ -17,6 +18,8 @@ Run (after `pip install web/wheels/*.whl pymupdf fonttools`):
 import os
 
 import pytest
+
+from junk_metric import junk_fonts, score_pdf
 
 HERE = os.path.dirname(__file__)
 FIXTURE = os.path.join(HERE, "fixtures", "issue16-p1.pdf")
@@ -28,21 +31,6 @@ pdf_cmap_fix = pytest.importorskip(
     "pdf_cmap_fix", reason="install the bundled wheel first: pip install web/wheels/*.whl"
 )
 import fitz  # noqa: E402  PyMuPDF — a wheel runtime dependency
-
-
-def _score(pdf_path):
-    """Tibetan vs leftover non-Tibetan/non-ASCII 'junk' — mirrors the worker."""
-    doc = fitz.open(pdf_path)
-    tib = junk = 0
-    for page in doc:
-        for ch in page.get_text():
-            cp = ord(ch)
-            if 0x0F00 <= cp <= 0x0FFF:
-                tib += 1
-            elif cp > 0x7F:
-                junk += 1
-    doc.close()
-    return tib, junk
 
 
 def _pua_free_dir():
@@ -60,7 +48,7 @@ def test_wheel_bundles_pua_free_tree():
 def test_default_gid_leaves_thai_block_garbage(tmp_path):
     out = str(tmp_path / "gid.pdf")
     pdf_cmap_fix.patch_pdf(FIXTURE, output_path=out, write_file=True)
-    _, junk = _score(out)
+    _, junk, _ = score_pdf(out)
     assert junk > 0, "fixture no longer reproduces issue #16 under the default gid tree"
 
 
@@ -69,7 +57,7 @@ def test_pua_free_clears_the_garbage(tmp_path):
     pdf_cmap_fix.patch_pdf(
         FIXTURE, output_path=out, write_file=True, font_lookup_dir=_pua_free_dir()
     )
-    tib, junk = _score(out)
+    tib, junk, _ = score_pdf(out)
     assert junk == 0, f"PUA-free tree should leave no garbage, got {junk} junk chars"
     assert tib > 100, f"expected real Tibetan after repair, got {tib} codepoints"
     assert EXPECTED_TIBETAN in fitz.open(out)[0].get_text()
