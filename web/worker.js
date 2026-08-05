@@ -183,14 +183,14 @@ LATIN_FONT = "Times New Roman" # everything else
 # can hand back NUL/control chars that python-docx (lxml) refuses to serialize.
 # Strip everything XML 1.0 forbids, keeping tab / newline / carriage-return.
 _XML_BAD = re.compile('[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\ufffe\\uffff]')
-# Legacy fonts map their space glyph to a Control-Pictures symbol (U+2423 open
-# box "␣"), and the /ToUnicode carries it straight through. Turn the box
-# back into a real space and drop the other control-picture stand-ins.
-_CTRL_PICS = re.compile('[\\u2400-\\u2422\\u2424]')
 def _xml_clean(s):
-    s = _XML_BAD.sub('', s)
-    s = s.replace('\\u2423', ' ')
-    return _CTRL_PICS.sub('', s)
+    # _clean (defined at boot) already turns the Control-Pictures open-box
+    # glyph back into a space and drops the other control-picture stand-ins.
+    # Reuse it instead of rebinding a second _CTRL_PICS in this block's
+    # globals -- Pyodide keeps one persistent Python namespace across boot()
+    # and extract(), so a second binding here would shadow the boot-level one
+    # and _patch_best's _clean (called below) would silently pick it up.
+    return _clean(_XML_BAD.sub('', s))
 
 def _attrs(span):
     flags = span.get("flags", 0) or 0
