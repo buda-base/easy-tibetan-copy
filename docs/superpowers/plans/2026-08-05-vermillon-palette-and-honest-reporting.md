@@ -162,6 +162,7 @@ from junk_metric import clean, is_hard_junk, junk_fonts, score_pdf
 HERE = os.path.dirname(__file__)
 CLEAN_FIXTURE = os.path.join(HERE, "fixtures", "thrangu-p1.pdf")
 BROKEN_FIXTURE = os.path.join(HERE, "fixtures", "issue16-p1.pdf")
+ALREADY_FIXTURE = os.path.join(HERE, "fixtures", "quartz-spaced-cmap-p1.pdf")
 
 pdf_cmap_fix = pytest.importorskip(
     "pdf_cmap_fix", reason="install the bundled wheel first: pip install web/wheels/*.whl"
@@ -200,6 +201,20 @@ def test_clean_repair_reports_no_junk(tmp_path):
     assert junk == 0, f"clean repair must report no junk, got {junk}"
     assert tib > 1000, f"expected the Tibetan to be recovered, got {tib}"
     assert sample, "a repaired file must yield a sample for the R3 report"
+
+
+def test_already_correct_pdf_reports_no_junk(tmp_path):
+    # A Pages/Quartz export whose Tibetan is already correct Unicode and whose
+    # font has no lookup match, so nothing is repaired (patched == 0). Its 46
+    # NO-BREAK SPACEs used to count as junk, which pushed a perfectly fine file
+    # into "partially repaired" with an orange badge and a "send us this PDF"
+    # button. It must reach the "already fine" branch instead.
+    out = str(tmp_path / "quartz.pdf")
+    pdf_cmap_fix.patch_pdf(ALREADY_FIXTURE, output_path=out, write_file=True)
+    tib, junk, sample = score_pdf(out)
+    assert junk == 0, f"an already-correct PDF must report no junk, got {junk}"
+    assert tib > 1000, f"expected the existing Tibetan to be counted, got {tib}"
+    assert any(0x0F00 <= ord(c) <= 0x0FFF for c in sample), "sample must carry Tibetan"
 
 
 def test_sample_is_capped(tmp_path):
