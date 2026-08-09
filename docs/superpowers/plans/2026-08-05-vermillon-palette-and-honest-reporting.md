@@ -554,7 +554,7 @@ the font responsible instead of saying 'some fonts'."
 - Consumes: `_patch_best` from Task 1.
 - Produces:
   - Python: `_ensure_patched() -> dict` — patches `/in.pdf` to `/patched.pdf` once and memoises the stats in `_PATCH_CACHE`.
-  - Worker message `{type:'extract'}` (no `pages` argument) resolves to `{page_count, blocks, text, docxBytes}` where each block is `{page:int, lines:[[run,…],…]}` and `run` is `{t,s,b,i,tib}`. **`pages_used` is gone** — the UI computes it.
+  - Worker message `{type:'extract'}` (no `pages` argument) resolves to `{page_count, blocks, text}` where each block is `{page:int, lines:[[run,…],…]}` and `run` is `{t,s,b,i,tib}`. **`pages_used` is gone** — the UI computes it. **`docxBytes` is gone too** — `extract` no longer builds a `.docx` at all, so it walks each page once instead of twice.
   - New worker message `{type:'docx', pages:'all'|'odd'|'even'}` resolves to `{type:'docx-built', docxBytes:Uint8Array}`.
 
 - [ ] **Step 1: Add the patch cache at boot**
@@ -644,7 +644,9 @@ sel = list(range(n))
    to
    `json.dumps({"page_count": n, "blocks": blocks_out})`.
 
-Leave the `/out.docx` generation in place — the first `.docx` (all pages) comes back with the extraction, so the common case needs no second call. Remove only the `py.FS.unlink('/patched.pdf');` line at the end of the JS wrapper, keeping `py.FS.unlink('/out.docx');`.
+**Remove the `/out.docx` generation from `extract` entirely** — delete the `_build_docx(d, sel, "/out.docx")` call, the `docxBytes` read, and both `py.FS.unlink` lines at the end of the JS wrapper. Every `.docx` now comes from the on-demand `docx` message in Step 5.
+
+Rationale, decided with the project owner: building the `.docx` eagerly made `extract` walk every page twice, and always over all pages. On a 265-page book in odd mode that is 530 page extractions where the pre-change code did 133. Since most users never download a `.docx`, the eager build charged everyone for a rare action. One pass now, and `extract` ends up faster than it was before this plan started.
 
 - [ ] **Step 5: Add the on-demand `.docx` builder**
 
@@ -692,7 +694,7 @@ def _build_docx(d, sel, out_path):
 In `self.onmessage` (`web/worker.js:245-255`), change the extract line and add the docx line:
 
 ```js
-    if (m.type === 'extract') { const r = await extract();          return post('extracted', r, [r.docxBytes.buffer]); }
+    if (m.type === 'extract') { const r = await extract();          return post('extracted', r); }
     if (m.type === 'docx')    { const r = await buildDocx(m.pages); return post('docx-built', r, [r.docxBytes.buffer]); }
 ```
 
@@ -828,19 +830,16 @@ Replace the whole function:
     });
     $('save-docx').addEventListener('click', async () => {
       const btn = $('save-docx');
-      // The all-pages .docx came back with the extraction; any other selection
-      // has to be rebuilt in the worker.
-      if (sel === 'all') {
-        download(r.docxBytes, baseName() + '.docx',
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-        return;
-      }
+      // extract no longer builds a .docx — every selection, including "all", is
+      // serialised on demand against the cached patched PDF.
       btn.disabled = true;
       const prev = btn.textContent;
       btn.textContent = 'Building…';
       try {
         const d = await call('docx', { pages: sel });
-        download(d.docxBytes, baseName() + '.' + sel + '.docx',
+        // "all" keeps the plain name; a filtered download says which half it is.
+        const suffix = sel === 'all' ? '' : '.' + sel;
+        download(d.docxBytes, baseName() + suffix + '.docx',
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
       } catch (err) {
         toast('Could not build the .docx.');
