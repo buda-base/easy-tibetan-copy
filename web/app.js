@@ -36,8 +36,21 @@ const App = (() => {
   }
 
   // ---- the engine (Pyodide in a Web Worker) --------------------------------
+  // The worker handles one message at a time, so at most one request is ever in
+  // flight and concurrent calls are never legitimate here. Two things keep that
+  // honest: every request carries an id that its reply echoes back, and the
+  // pending slot is never overwritten.
+  //
+  // Without the id, any non-progress reply settled whatever promise happened to
+  // be pending. A .docx build blocks the worker for minutes on a large book, so
+  // clicking "Fix the PDF" during one made 'docx-built' resolve the *fix*
+  // promise: renderPdfResult got an empty stats object and announced "This PDF
+  // couldn't be repaired" about a PDF it had just repaired.
   let worker = null;
   let pending = null;
+  let nextId = 1;
+
+  function busy() { return pending !== null; }
 
   function engine() {
     if (worker) return worker;
@@ -45,15 +58,16 @@ const App = (() => {
     worker.onmessage = (e) => {
       const m = e.data;
       if (m.type === 'progress') { onPhase(m.phase); return; }
-      if (m.type === 'error') {
-        const p = pending; pending = null;
-        if (p) p.reject(new Error(m.message));
-        return;
-      }
+      // Only the reply to the request we are waiting on may settle it. Anything
+      // else — a duplicate, or a reply to a request we gave up on — is dropped.
+      if (!pending || m.id !== pending.id) return;
       const p = pending; pending = null;
-      if (p) p.resolve(m);
+      if (m.type === 'error') p.reject(new Error(m.message));
+      else p.resolve(m);
     };
     worker.onerror = (e) => {
+      // The worker itself failed, so there is no id to match on and whatever
+      // was in flight went down with it.
       const p = pending; pending = null;
       if (p) p.reject(new Error(e.message || 'Engine crashed (the file may be too large).'));
     };
@@ -61,9 +75,17 @@ const App = (() => {
   }
 
   function call(type, payload = {}, transfer) {
+    if (busy()) {
+      // Overwriting the pending slot would drop the reply it is waiting for and
+      // leave this promise to be settled by the wrong message. The UI keeps this
+      // unreachable (see the busy() guards below), so arriving here means a bug
+      // — fail it loudly rather than quietly corrupting a result screen.
+      return Promise.reject(new Error('The engine is still busy with the previous step — please wait for it to finish.'));
+    }
+    const id = nextId++;
     return new Promise((resolve, reject) => {
-      pending = { resolve, reject };
-      engine().postMessage({ type, ...payload }, transfer || []);
+      pending = { id, type, resolve, reject };
+      engine().postMessage({ type, id, ...payload }, transfer || []);
     });
   }
 
@@ -123,6 +145,11 @@ const App = (() => {
   }
 
   async function handleFile(file) {
+    // Reachable mid-request through the window-level paste listener. Starting a
+    // new document while a .docx build holds the worker used to hand analyze's
+    // promise the build's reply, and the config screen then read page_count off
+    // a docx payload ("no extractable text on its undefined pages").
+    if (busy()) return toast('Still working on your document — one moment.');
     const kind = fileKind(file);
     if (kind === 'doc') return noticeDoc();
     if (kind === 'unknown') return toast('Please choose a PDF, Word (.docx) or RTF file.');
@@ -523,6 +550,11 @@ const App = (() => {
       // the time the worker replies.
       const requestedSel = sel;
       btn.disabled = true;
+      // "Fix the PDF" is the other worker round-trip on this screen. The engine
+      // takes one request at a time, so hold it closed for the duration rather
+      // than letting the user queue a second one behind a multi-minute build.
+      const toFix = $('to-fix');
+      if (toFix) toFix.disabled = true;
       const prev = btn.textContent;
       btn.textContent = 'Building…';
       try {
@@ -535,6 +567,7 @@ const App = (() => {
         toast('Could not build the .docx.');
       } finally {
         btn.disabled = false; btn.textContent = prev;
+        if (toFix) toFix.disabled = false;
       }
     });
     $('to-fix').addEventListener('click', () => { state.mode = 'fix'; process(); });
@@ -573,6 +606,11 @@ const App = (() => {
   }
 
   function reset() {
+    // "Do another", the header logo and the error screen's "Start over" all land
+    // here. Leaving the result screen mid-build would drop the user on the
+    // dropzone with an engine that cannot take a new file for minutes, so hold
+    // them until the request in flight finishes.
+    if (busy()) return toast('Still working on your document — one moment.');
     state = {};
     $('file').value = '';
     showView('upload');

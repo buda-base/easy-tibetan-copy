@@ -346,15 +346,19 @@ d.close()
   return { docxBytes };
 }
 
+// Every reply echoes the id of the request that produced it. The UI settles a
+// promise only on a matching id, so a slow reply (a .docx build runs for minutes
+// on a large book) can never resolve a request made after it.
 self.onmessage = async (e) => {
   const m = e.data;
+  const id = m.id;
   try {
     if (m.type === 'boot') { await boot(); return; }
-    if (m.type === 'analyze') { return post('analyzed', await analyze(new Uint8Array(m.bytes))); }
-    if (m.type === 'fix')     { const r = await fix();          return post('fixed', r, [r.pdfBytes.buffer]); }
-    if (m.type === 'extract') { const r = await extract(); return post('extracted', r); }
-    if (m.type === 'docx')    { const r = await buildDocx(m.pages); return post('docx-built', r, [r.docxBytes.buffer]); }
+    if (m.type === 'analyze') { return post('analyzed', { id, ...(await analyze(new Uint8Array(m.bytes))) }); }
+    if (m.type === 'fix')     { const r = await fix();          return post('fixed', { id, ...r }, [r.pdfBytes.buffer]); }
+    if (m.type === 'extract') { const r = await extract(); return post('extracted', { id, ...r }); }
+    if (m.type === 'docx')    { const r = await buildDocx(m.pages); return post('docx-built', { id, ...r }, [r.docxBytes.buffer]); }
   } catch (err) {
-    post('error', { message: (err && err.message) ? err.message : String(err) });
+    post('error', { id, message: (err && err.message) ? err.message : String(err) });
   }
 };
