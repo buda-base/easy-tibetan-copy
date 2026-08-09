@@ -61,10 +61,13 @@ body {
 body::before {
   content: '';
   position: fixed; inset: 0;
+  /* color-mix with transparent is exactly rgba(token, p) — the alpha carries
+     through unchanged — so these stay pinned to the palette instead of holding
+     their own copy of its hex values. */
   background:
-    radial-gradient(1100px 620px at 50% -8%, rgba(217,117,40,.10), transparent 60%),
-    radial-gradient(900px 600px at 92% 8%, rgba(181,52,42,.06), transparent 55%),
-    radial-gradient(800px 700px at 4% 100%, rgba(192,145,47,.06), transparent 55%);
+    radial-gradient(1100px 620px at 50% -8%, color-mix(in srgb, var(--saffron) 10%, transparent), transparent 60%),
+    radial-gradient(900px 600px at 92% 8%, color-mix(in srgb, var(--maroon) 6%, transparent), transparent 55%),
+    radial-gradient(800px 700px at 4% 100%, color-mix(in srgb, var(--gold) 6%, transparent), transparent 55%);
   pointer-events: none; z-index: 0;
 }
 body::after {
@@ -94,7 +97,7 @@ header {
   width: 42px; height: 42px; flex: none; color: var(--maroon);
   position: relative; top: 1px;
   border-radius: 9px; transition: transform .3s var(--ease);
-  filter: drop-shadow(0 2px 4px rgba(181,52,42,.18));
+  filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--maroon) 18%, transparent));
 }
 .brand b {
   font-family: 'Fraunces', serif; font-weight: 500; font-size: 1.28rem;
@@ -102,7 +105,7 @@ header {
 }
 .brand span { display:block; font-size: .82rem; color: var(--ink-faint); margin-top: 2px; }
 .byline { font-size: .76rem; color: var(--ink-faint); text-align: right; line-height:1.4; }
-.byline a { color: var(--maroon); text-decoration: none; border-bottom: 1px solid rgba(181,52,42,.25); }
+.byline a { color: var(--maroon); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--maroon) 25%, transparent); }
 
 /* ----------------------------------------------------------- hero */
 .hero { text-align: center; padding: 58px 0 40px; }
@@ -237,14 +240,14 @@ header {
   box-shadow: 0 1px 3px -1px rgba(44,28,12,.15);
 }
 .btn-primary:hover { background: var(--maroon-deep); transform: translateY(-1px);
-  box-shadow: 0 8px 18px -8px rgba(181,52,42,.45); }
+  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--maroon) 45%, transparent); }
 .btn-primary:active { background: var(--maroon-deep); transform: translateY(0);
   box-shadow: 0 1px 3px -1px rgba(44,28,12,.18); }
 .btn-ghost { background: var(--paper-deep); color: var(--ink); border:1px solid var(--line); }
 .btn-ghost:hover { background: var(--card); box-shadow: 0 4px 12px -6px rgba(44,28,12,.22); }
 /* accent: the "switch mode" action (Extract text / Fix the PDF) — flat saffron tint */
 .btn-accent { background: color-mix(in srgb, var(--saffron-soft) 34%, var(--card)); color: var(--maroon-deep); border:1px solid var(--saffron-soft); }
-.btn-accent:hover { background: color-mix(in srgb, var(--saffron-soft) 46%, var(--card)); box-shadow: 0 6px 14px -7px rgba(217,117,40,.38); }
+.btn-accent:hover { background: color-mix(in srgb, var(--saffron-soft) 46%, var(--card)); box-shadow: 0 6px 14px -7px color-mix(in srgb, var(--saffron) 38%, transparent); }
 /* quiet: the low-emphasis "start over" action (Do another) — outlined, transparent */
 .btn-quiet { background: transparent; color: var(--ink-faint); border:1px solid var(--line); }
 .btn-quiet:hover { color: var(--maroon); background: var(--paper-deep); border-color: var(--line-strong); }
@@ -344,7 +347,7 @@ header {
 footer { text-align:center; margin-top: 60px; color: var(--ink-faint); font-size:.82rem; }
 footer a { color: var(--maroon); text-decoration:none; }
 footer .feedback { max-width: 40em; margin: 0 auto 26px; line-height:1.5; }
-footer .feedback a { border-bottom: 1px solid rgba(181,52,42,.25); }
+footer .feedback a { border-bottom: 1px solid color-mix(in srgb, var(--maroon) 25%, transparent); }
 .credit { display:flex; flex-direction:column; align-items:center; gap:14px; padding-top:22px; border-top:1px solid var(--line, rgba(0,0,0,.08)); }
 .credit-logos { display:flex; align-items:center; gap:24px; }
 .credit-logos a { display:inline-flex; align-items:center; }
