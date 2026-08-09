@@ -215,6 +215,11 @@ def _build_docx(d, sel, out_path):
   return booting;
 }
 
+// analyze is the ONLY permitted writer of /in.pdf. _PATCH_CACHE is keyed on
+// nothing but "a patch has been computed", so it is correct only while that
+// holds: any other code path that writes /in.pdf must clear _PATCH_CACHE (and
+// unlink /patched.pdf) the way this function does, or fix/extract/docx will
+// keep serving the previous document's patch.
 async function analyze(bytes) {
   await boot();
   py.FS.writeFile('/in.pdf', bytes);
@@ -314,6 +319,7 @@ for pi in sel:
         if disp_lines:
             blocks_out.append({"page": pi, "lines": disp_lines})
 
+d.close()
 globals()['_TXT'] = "".join(plain)
 json.dumps({"page_count": n, "blocks": blocks_out})
 `);
