@@ -243,7 +243,6 @@ header {
   box-shadow: 0 8px 18px -8px rgba(181,52,42,.45); }
 .btn-primary:active { background: var(--maroon-deep); transform: translateY(0);
   box-shadow: 0 1px 3px -1px rgba(44,28,12,.18); }
-.btn-primary:disabled { opacity:.5; cursor: default; transform:none; box-shadow:none; }
 .btn-ghost { background: var(--paper-deep); color: var(--ink); border:1px solid var(--line); }
 .btn-ghost:hover { background: var(--card); box-shadow: 0 4px 12px -6px rgba(44,28,12,.22); }
 /* accent: the "switch mode" action (Extract text / Fix the PDF) — flat saffron tint */
@@ -252,6 +251,10 @@ header {
 /* quiet: the low-emphasis "start over" action (Do another) — outlined, transparent */
 .btn-quiet { background: transparent; color: var(--ink-faint); border:1px solid var(--line); }
 .btn-quiet:hover { color: var(--maroon); background: var(--paper-deep); border-color: var(--line-strong); }
+/* Applies to every variant, and last so it wins over the :hover rules above:
+   an empty page selection disables Copy / .txt / .docx, and the .docx build
+   disables its own button and "Fix the PDF". */
+.btn:disabled { opacity:.5; cursor: default; transform:none; box-shadow:none; }
 .btn-actions { display:flex; gap:12px; margin-top: 26px; }
 /* flex:1 resolves to flex-basis:0, so the primary was squeezed by its siblings
    and "Download fixed PDF" wrapped onto two lines. flex:0 0 auto fixes that,

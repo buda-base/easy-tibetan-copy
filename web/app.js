@@ -551,24 +551,40 @@ const App = (() => {
         </div>
       </div>`;
 
+    const n = r.page_count || 0;
+    // Pages the *selection* covers, not pages that happened to produce blocks:
+    // counting the latter made a 12-page document with 3 blank pages read
+    // "9 of 12 pages" on All pages, which looks like a filter is on.
+    const selectedPages = () => sel === 'all' ? n : sel === 'odd' ? Math.ceil(n / 2) : Math.floor(n / 2);
+
+    let text = '';
     function paint() {
       const blocks = all.filter(keep);
-      const text = textOf(blocks);
+      text = textOf(blocks);
       const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-      const used = new Set(blocks.map((b) => b.page)).size;
       $('textbox').innerHTML = renderBlocks(blocks)
         || '<span style="color:var(--ink-faint)">No extractable text on the selected pages.</span>';
-      $('text-meta').textContent =
-        `${used} of ${r.page_count} page${r.page_count === 1 ? '' : 's'} · ${words.toLocaleString()} words`;
-      return text;
+      const pageLabel = sel === 'all'
+        ? `${n} page${n === 1 ? '' : 's'}`
+        : `${selectedPages()} of ${n} page${n === 1 ? '' : 's'}`;
+      $('text-meta').textContent = `${pageLabel} · ${words.toLocaleString()} words`;
+      syncActions();
     }
-    let text = paint();
+    // An empty selection has nothing to copy, save or serialise. Copy used to
+    // write "" and still toast "Copied to clipboard.", .txt wrote an empty file
+    // and .docx shipped a valid but empty document. The textbox already says
+    // there is no text here; the actions have to agree.
+    function syncActions() {
+      const empty = !text.trim();
+      ['copy', 'save', 'save-docx'].forEach((id) => { const b = $(id); if (b) b.disabled = empty; });
+    }
+    paint();
 
     const seg = $('pages-seg');
     seg.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
       sel = b.dataset.pages;
       seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
-      text = paint();
+      paint();
     }));
 
     $('copy').addEventListener('click', async () => {
@@ -607,6 +623,10 @@ const App = (() => {
       } finally {
         btn.disabled = false; btn.textContent = prev;
         if (toFix) toFix.disabled = false;
+        // The page selection can have moved to an empty one while the build
+        // ran, so settle the actions from the current text rather than leaving
+        // the line above's unconditional re-enable standing.
+        syncActions();
       }
     });
     $('to-fix').addEventListener('click', () => { state.mode = 'fix'; process(); });
