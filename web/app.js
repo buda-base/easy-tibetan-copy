@@ -364,6 +364,11 @@ const App = (() => {
   function renderPdfResult(s, pdfBytes) {
     const seen    = s.fonts_seen || 0;
     const fixed   = s.patched || 0;
+    // Fonts with no entry in the lookup tree. They are the only thing that tells
+    // us a font went unhandled: junk is deliberately narrow (PUA / Thai / U+FFFD)
+    // and does not fire on a legacy font that maps into extended Latin, which
+    // copies as gibberish all the same.
+    const noMatch = s.no_match || 0;
     const tibetan = s.tibetan_chars || 0;
     const junk    = s.junk_chars || 0;
     const junkFonts = s.junk_fonts || [];
@@ -397,25 +402,59 @@ const App = (() => {
       ? `A few characters still copy as garbage, and we can't tell which font is responsible — sending us the file will help us track it down.`
       : `The runs set in ${fontList} still copy as garbage — ${nFonts === 1 ? "that font isn't" : "those fonts aren't"} in our database yet. Sending us the file is how ${nFonts === 1 ? 'it gets' : 'they get'} added.`;
 
+    // The same fact — noMatch of seen fonts were never matched — in the two
+    // grammatical shapes the copy below needs: a sentence-initial subject for
+    // "… in our database", and an object for "We don't recognise …".
+    const unknownSubject = noMatch < seen
+      ? `${noMatch} of its ${seen} fonts ${noMatch === 1 ? "isn't" : "aren't"}`
+      : seen === 1 ? "Its only font isn't" : `None of its ${seen} fonts are`;
+    const unknownObject = noMatch < seen
+      ? `${noMatch} of its ${seen} fonts`
+      : seen === 1 ? 'its only font' : `any of its ${seen} fonts`;
+
+    // 'already' means the Tibetan we can see extracts correctly — but fonts we
+    // never matched may still be copying as something else, and the figures line
+    // below is suppressed here (nothing was repaired), so this is the only place
+    // that can say so. State it plainly; nothing here is known to be broken.
+    const alreadyHead = noMatch === 0
+      ? `${badgeOk}
+          <div><h3>This PDF is already fine</h3><p>Its Tibetan already extracts as correct Unicode — no repair was needed. Here's what copying from it gives you.</p></div>`
+      : `${badgeOk}
+          <div><h3>The Tibetan here is already correct</h3><p>It extracts as proper Unicode, so no repair was needed. ${unknownSubject} in our database, so if some other text still copies wrong, that's where it comes from. Here's what copying gives you.</p></div>`;
+
+    // 'cant' is reached two different ways. no_match > 0 means we met fonts we
+    // don't cover. no_match === 0 with almost no Tibetan extracted means the
+    // document simply has no Tibetan in it — an English-only PDF used to be told
+    // "none of its N fonts are in our recognition database", which was false.
+    const cantHead = noMatch > 0
+      ? `${badgeWarn}
+          <div><h3>This PDF couldn't be repaired</h3><p>We don't recognise ${unknownObject}, so the Tibetan set in ${noMatch === 1 ? 'it' : 'them'} can't be turned into Unicode. Sending us the file is how ${noMatch === 1 ? 'that font gets' : 'those fonts get'} added.</p></div>`
+      : `${badgeWarn}
+          <div><h3>No Tibetan text found</h3><p>We couldn't find any Tibetan in this document, so there was nothing to repair. If you were expecting Tibetan here, send us the file and we'll look into it.</p></div>`;
+
     const head =
       phase === 'ok' ? `${badgeOk}
           <div><h3>Your PDF is fixed</h3><p>Here's what copying from it gives you now.</p></div>`
-    : phase === 'already' ? `${badgeOk}
-          <div><h3>This PDF is already fine</h3><p>Its Tibetan already extracts as correct Unicode — no repair was needed. Here's what copying from it gives you.</p></div>`
+    : phase === 'already' ? alreadyHead
     : phase === 'partial' ? `${badgeWarn}
           <div><h3>${partialHeadline}</h3><p>${tibetan.toLocaleString()} Tibetan characters came out correctly. ${partialBodyTail}</p></div>`
-    : `${badgeWarn}
-          <div><h3>This PDF couldn't be repaired</h3><p>None of its ${seen} fonts are in our recognition database, so its Tibetan can't be turned into Unicode. This file uses legacy fonts we don't cover yet.</p></div>`;
+    : cantHead;
 
     // The proof: show the repaired Tibetan rather than counting it. 'cant'
     // produced nothing usable, so it shows neither sample nor figures.
     const proof = (phase !== 'cant' && sample)
       ? `<div class="textbox proof">${esc(sample).split('\n').map((l) => `<span class="ln">${l}</span>`).join('')}</div>`
       : '';
+    // "N of M fonts repaired", not "N fonts repaired": with the stat cards gone
+    // the denominator is the only thing left telling the reader that M - N fonts
+    // went untouched. Dropped entirely when nothing was repaired — "0 of 5 fonts
+    // repaired" under a headline saying no repair was needed reads as a failure.
+    const repaired = fixed > 0
+      ? `<span>${fixed} of ${seen} font${seen === 1 ? '' : 's'} repaired</span><span class="dot"></span>`
+      : '';
     const figures = phase === 'cant' ? '' : `
         <div class="proofline">
-          <span>${fixed} font${fixed === 1 ? '' : 's'} repaired</span><span class="dot"></span>
-          <span>${pages} page${pages === 1 ? '' : 's'}</span><span class="dot"></span>
+          ${repaired}<span>${pages} page${pages === 1 ? '' : 's'}</span><span class="dot"></span>
           <span>${tibetan.toLocaleString()} Tibetan character${tibetan === 1 ? '' : 's'}</span>
         </div>`;
 
