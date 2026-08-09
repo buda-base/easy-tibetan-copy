@@ -221,9 +221,6 @@ header {
   padding: 8px 18px; border-radius: 9px; cursor:pointer; transition: all .22s var(--ease);
 }
 .seg button.on { background: var(--card); color: var(--maroon); box-shadow: var(--shadow-sm); font-weight:600; }
-.field-row { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-.field-row .lab h4 { font-size:.96rem; font-weight:600; }
-.field-row .lab p { font-size:.82rem; color: var(--ink-faint); }
 
 /* ----------------------------------------------------------- buttons */
 .btn {
@@ -307,7 +304,11 @@ header {
 }
 
 /* extracted text */
-.texttools { display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; gap:12px; }
+/* Holds the All/Odd/Even control and the word/page meta. The segmented control
+   plus the meta line do not fit side by side inside the panel on a narrow
+   phone, so let them stack instead of squeezing both to min-content — which
+   wrapped the labels inside the segment buttons. */
+.texttools { display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; gap:12px; flex-wrap: wrap; }
 .texttools .fmt { font-size:.78rem; color: var(--ink-faint); text-transform:uppercase; letter-spacing:.1em; }
 @font-face {
   font-family: 'Jomolhari';
