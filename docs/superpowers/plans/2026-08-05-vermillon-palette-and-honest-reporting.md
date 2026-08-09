@@ -500,7 +500,7 @@ Replace the whole function body. `esc`, `download`, `baseName`, `toast` and `sho
 
 - [ ] **Step 2: Add the styles the report needs**
 
-Append to `web/styles.css`, immediately after the `.stats` / `.stat` rules (around `web/styles.css:289`). Keep `.stats` and `.stat` in place — `renderConvertResult` does not use them, but removing rules is a separate concern and they cost nothing.
+**Delete** the now-dead `.stats`, `.stat`, `.stat b` and `.stat span` rules at `web/styles.css:285-288`, and put the new rules in their place. `renderPdfResult` was their only consumer and this task removes the stat cards, so nothing in `web/` emits those class names afterwards — verify with `grep -n 'class="stats"\|class="stat"' web/app.js`, which must return nothing.
 
 ```css
 /* R3 report: the proof is a sample of the repaired text, not a stat card. */
