@@ -544,8 +544,8 @@ const App = (() => {
         <div class="textbox rich" id="textbox"></div>
         <div class="btn-actions" style="flex-wrap:wrap">
           <button class="btn btn-primary" id="copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</button>
-          <button class="btn btn-ghost" id="save">.txt</button>
-          <button class="btn btn-ghost" id="save-docx">.docx</button>
+          <button class="btn btn-ghost" id="save"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> .txt</button>
+          <button class="btn btn-ghost" id="save-docx"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> <span class="btn-label">.docx</span></button>
           <button class="btn btn-accent" id="to-fix"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg> Fix the PDF</button>
           <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Do another</button>
         </div>
@@ -610,8 +610,11 @@ const App = (() => {
       // than letting the user queue a second one behind a multi-minute build.
       const toFix = $('to-fix');
       if (toFix) toFix.disabled = true;
-      const prev = btn.textContent;
-      btn.textContent = 'Building…';
+      // Swap the label only — writing textContent on the button would drop the
+      // download icon, and restoring it below would never bring the SVG back.
+      const label = btn.querySelector('.btn-label');
+      const prev = label.textContent;
+      label.textContent = 'Building…';
       try {
         const d = await call('docx', { pages: requestedSel });
         // "all" keeps the plain name; a filtered download says which half it is.
@@ -621,7 +624,7 @@ const App = (() => {
       } catch {
         toast('Could not build the .docx.');
       } finally {
-        btn.disabled = false; btn.textContent = prev;
+        btn.disabled = false; label.textContent = prev;
         if (toFix) toFix.disabled = false;
         // The page selection can have moved to an empty one while the build
         // ran, so settle the actions from the current text rather than leaving
