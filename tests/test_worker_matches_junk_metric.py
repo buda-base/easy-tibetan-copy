@@ -27,6 +27,7 @@ import os
 
 import pytest
 
+import junk_metric
 from junk_metric import clean, is_hard_junk, junk_fonts, score_pdf
 
 HERE = os.path.dirname(__file__)
@@ -103,3 +104,35 @@ def test_junk_fonts_matches_the_mirror(worker_ns, tmp_path):
     out = str(tmp_path / "gid.pdf")
     pdf_cmap_fix.patch_pdf(BROKEN_FIXTURE, output_path=out, write_file=True)
     assert worker_ns["_junk_fonts"](out) == junk_fonts(out)
+
+
+def test_subset_prefix_matches_the_mirror(worker_ns):
+    r"""_SUBSET_PREFIX carries the boot block's only escape that is neither a
+    \uXXXX nor a \n -- the doubled \\+ in r"^[A-Z]{6}\\+". No font in the
+    fixtures carries a subset prefix, so test_junk_fonts_matches_the_mirror
+    passes whether or not that escape survived the template literal. Compare
+    the pattern against the mirror directly, and check it actually strips one.
+    """
+    assert worker_ns["_SUBSET_PREFIX"].pattern == junk_metric._SUBSET_PREFIX.pattern
+    assert worker_ns["_SUBSET_PREFIX"].sub("", "ABCDEF+Jomolhari") == "Jomolhari"
+    # Six capitals with no "+" are part of the name, not a subset prefix.
+    assert worker_ns["_SUBSET_PREFIX"].sub("", "ABCDEFJomolhari") == "ABCDEFJomolhari"
+
+
+def test_subset_prefix_backslash_is_doubled_in_the_source():
+    r"""The escaping half of the same gap, which worker_ns cannot see.
+
+    _extract_boot_python un-doubles backslashes, so r"^[A-Z]{6}\\+" and
+    r"^[A-Z]{6}\+" both reach exec as \+ and the test above passes either way.
+    Only the raw source can tell them apart -- and the single-backslash form is
+    the one that ships broken: the JS template literal turns \+ into a bare +,
+    giving [A-Z]{6}+, a possessive quantifier on Python 3.11+. That compiles,
+    so the worker boots, and silently stops stripping subset prefixes -- font
+    names in the R3 report would come back as "ABCDEF+Jomolhari".
+    """
+    with open(WORKER_JS, encoding="utf-8") as f:
+        line = next(l for l in f if "_SUBSET_PREFIX = re.compile" in l)
+    assert r"\\+" in line, (
+        "_SUBSET_PREFIX must double its backslash inside the JS template "
+        f"literal: {line.strip()}"
+    )
