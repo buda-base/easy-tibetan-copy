@@ -36,8 +36,21 @@ const App = (() => {
   }
 
   // ---- the engine (Pyodide in a Web Worker) --------------------------------
+  // The worker handles one message at a time, so at most one request is ever in
+  // flight and concurrent calls are never legitimate here. Two things keep that
+  // honest: every request carries an id that its reply echoes back, and the
+  // pending slot is never overwritten.
+  //
+  // Without the id, any non-progress reply settled whatever promise happened to
+  // be pending. A .docx build blocks the worker for minutes on a large book, so
+  // clicking "Fix the PDF" during one made 'docx-built' resolve the *fix*
+  // promise: renderPdfResult got an empty stats object and announced "This PDF
+  // couldn't be repaired" about a PDF it had just repaired.
   let worker = null;
   let pending = null;
+  let nextId = 1;
+
+  function busy() { return pending !== null; }
 
   function engine() {
     if (worker) return worker;
@@ -45,15 +58,16 @@ const App = (() => {
     worker.onmessage = (e) => {
       const m = e.data;
       if (m.type === 'progress') { onPhase(m.phase); return; }
-      if (m.type === 'error') {
-        const p = pending; pending = null;
-        if (p) p.reject(new Error(m.message));
-        return;
-      }
+      // Only the reply to the request we are waiting on may settle it. Anything
+      // else — a duplicate, or a reply to a request we gave up on — is dropped.
+      if (!pending || m.id !== pending.id) return;
       const p = pending; pending = null;
-      if (p) p.resolve(m);
+      if (m.type === 'error') p.reject(new Error(m.message));
+      else p.resolve(m);
     };
     worker.onerror = (e) => {
+      // The worker itself failed, so there is no id to match on and whatever
+      // was in flight went down with it.
       const p = pending; pending = null;
       if (p) p.reject(new Error(e.message || 'Engine crashed (the file may be too large).'));
     };
@@ -61,9 +75,17 @@ const App = (() => {
   }
 
   function call(type, payload = {}, transfer) {
+    if (busy()) {
+      // Overwriting the pending slot would drop the reply it is waiting for and
+      // leave this promise to be settled by the wrong message. The UI keeps this
+      // unreachable (see the busy() guards below), so arriving here means a bug
+      // — fail it loudly rather than quietly corrupting a result screen.
+      return Promise.reject(new Error('The engine is still busy with the previous step — please wait for it to finish.'));
+    }
+    const id = nextId++;
     return new Promise((resolve, reject) => {
-      pending = { resolve, reject };
-      engine().postMessage({ type, ...payload }, transfer || []);
+      pending = { id, type, resolve, reject };
+      engine().postMessage({ type, id, ...payload }, transfer || []);
     });
   }
 
@@ -123,11 +145,16 @@ const App = (() => {
   }
 
   async function handleFile(file) {
+    // Reachable mid-request through the window-level paste listener. Starting a
+    // new document while a .docx build holds the worker used to hand analyze's
+    // promise the build's reply, and the config screen then read page_count off
+    // a docx payload ("no extractable text on its undefined pages").
+    if (busy()) return toast('Still working on your document — one moment.');
     const kind = fileKind(file);
     if (kind === 'doc') return noticeDoc();
     if (kind === 'unknown') return toast('Please choose a PDF, Word (.docx) or RTF file.');
 
-    state = { filename: file.name, kind, mode: 'fix', pages: 'all' };
+    state = { filename: file.name, kind, mode: 'fix' };
 
     const mb = file.size / 1048576;
     if (mb > WARN_MB && !file._confirmed) return renderSizeWarning(file, mb);
@@ -285,17 +312,6 @@ const App = (() => {
               </button>
             </div>
           </div>
-
-          <div id="extract-opts" ${state.mode === 'extract' ? '' : 'hidden'}>
-            <div class="field-row">
-              <div class="lab"><h4>Which pages?</h4><p>Useful for pecha-style books printed two-up.</p></div>
-              <div class="seg" id="pages-seg">
-                <button data-pages="all" class="on">All</button>
-                <button data-pages="odd">Odd</button>
-                <button data-pages="even">Even</button>
-              </div>
-            </div>
-          </div>
         </div>
 
         <details class="fonts-reveal">
@@ -313,13 +329,7 @@ const App = (() => {
     $('view-config').querySelectorAll('.tile').forEach((t) => t.addEventListener('click', () => {
       state.mode = t.dataset.mode;
       $('view-config').querySelectorAll('.tile').forEach((x) => x.classList.toggle('on', x === t));
-      $('extract-opts').hidden = state.mode !== 'extract';
       $('go-label').textContent = state.mode === 'fix' ? 'Fix & download' : 'Extract text';
-    }));
-    const seg = $('pages-seg');
-    if (seg) seg.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
-      state.pages = b.dataset.pages;
-      seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
     }));
     $('go').addEventListener('click', submit);
 
@@ -339,7 +349,7 @@ const App = (() => {
         const r = await call('fix');
         renderPdfResult(r.stats || {}, r.pdfBytes);
       } else {
-        const r = await call('extract', { pages: state.pages || 'all' });
+        const r = await call('extract');
         renderTextResult(r);
       }
     } catch (err) { showError(err.message); }
@@ -352,49 +362,104 @@ const App = (() => {
 
   // ---- step 4: results -----------------------------------------------------
   function renderPdfResult(s, pdfBytes) {
-    const seen = s.fonts_seen || 0;
-    const fixed = s.patched || 0;
-    const noMatch = s.no_match ?? Math.max(0, seen - fixed - (s.no_change || 0));
+    const seen    = s.fonts_seen || 0;
+    const fixed   = s.patched || 0;
+    // Fonts with no entry in the lookup tree. They are the only thing that tells
+    // us a font went unhandled: junk is deliberately narrow (PUA / Thai / U+FFFD)
+    // and does not fire on a legacy font that maps into extended Latin, which
+    // copies as gibberish all the same.
+    const noMatch = s.no_match || 0;
     const tibetan = s.tibetan_chars || 0;
-    const junk = s.junk_chars || 0;
-    // junk = characters that still extract as non-Tibetan, non-ASCII after the
-    // worker tried both the gid and PUA-free trees — the honest "does this copy
-    // cleanly" signal. 0 = clean; >0 = some runs are still garbled. Issue #16
-    // used to slip through as a false "all good" because we only counted real
-    // Tibetan and never noticed the leftover garbage.
+    const junk    = s.junk_chars || 0;
+    const junkFonts = s.junk_fonts || [];
+    const sample  = s.sample || '';
+    const pages   = (state.analysis && state.analysis.page_count) || 0;
+    // junk is now narrow: PUA, Thai block or U+FFFD only. A file mixing Tibetan
+    // with English or Sanskrit no longer trips it, so junk > 0 genuinely means
+    // some runs still copy as garbage.
     const hasTibetan = tibetan >= 8;
     const phase =
-      junk === 0 && fixed > 0  ? 'ok' :       // repaired and now clean
-      junk === 0 && hasTibetan ? 'already' :  // was already valid Unicode
-      hasTibetan               ? 'partial' :  // some Tibetan recovered, junk remains
-                                 'cant';        // nothing usable came out
-    const ok = phase === 'ok';
-
-    const statCards = (
-      phase === 'ok'      ? [['Fonts seen', seen], ['Fonts fixed', fixed], ['Glyphs upgraded', s.upgrades || 0]] :
-      phase === 'already' ? [['Fonts seen', seen], ['Already Unicode', '✓']] :
-      phase === 'partial' ? [['Fonts seen', seen], ['Fonts fixed', fixed], ['Still garbled', junk]] :
-                            [['Fonts seen', seen], ['Fonts fixed', fixed], ['Not recognised', noMatch]]
-    ).map(([label, val]) => `<div class="stat"><b>${val ?? 0}</b><span>${label}</span></div>`).join('');
+      junk === 0 && fixed > 0  ? 'ok' :
+      junk === 0 && hasTibetan ? 'already' :
+      hasTibetan               ? 'partial' :
+                                 'cant';
 
     const badgeOk = `<div class="badge-ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>`;
     const badgeWarn = `<div class="badge-warn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v6"/><path d="M12 17h.01"/></svg></div>`;
 
+    const fontList = junkFonts.map((f) => `<span class="fontname">${esc(f)}</span>`).join(', ');
+    // junk_chars and junk_fonts come from different PyMuPDF extractions and can
+    // disagree: junk > 0 with an empty junkFonts list is reachable. Give that
+    // case its own honest wording — we know something still copies as garbage,
+    // but we can't name the font — instead of forcing it through the "one
+    // font" / "some fonts" phrasing, which would make the headline and body
+    // contradict each other.
+    const nFonts = junkFonts.length;
+    const partialHeadline = nFonts === 0
+      ? "Mostly fixed — a few characters still don't copy cleanly"
+      : `Mostly fixed — ${nFonts === 1 ? 'one font' : 'some fonts'} we don't cover`;
+    const partialBodyTail = nFonts === 0
+      ? `A few characters still copy as garbage, and we can't tell which font is responsible — sending us the file will help us track it down.`
+      : `The runs set in ${fontList} still copy as garbage — ${nFonts === 1 ? "that font isn't" : "those fonts aren't"} in our database yet. Sending us the file is how ${nFonts === 1 ? 'it gets' : 'they get'} added.`;
+
+    // The same fact — noMatch of seen fonts were never matched — in the two
+    // grammatical shapes the copy below needs: a sentence-initial subject for
+    // "… in our database", and an object for "We don't recognise …".
+    const unknownSubject = noMatch < seen
+      ? `${noMatch} of its ${seen} fonts ${noMatch === 1 ? "isn't" : "aren't"}`
+      : seen === 1 ? "Its only font isn't" : `None of its ${seen} fonts are`;
+    const unknownObject = noMatch < seen
+      ? `${noMatch} of its ${seen} fonts`
+      : seen === 1 ? 'its only font' : `any of its ${seen} fonts`;
+
+    // 'already' means the Tibetan we can see extracts correctly — but fonts we
+    // never matched may still be copying as something else, and the figures line
+    // below is suppressed here (nothing was repaired), so this is the only place
+    // that can say so. State it plainly; nothing here is known to be broken.
+    const alreadyHead = noMatch === 0
+      ? `${badgeOk}
+          <div><h3>This PDF is already fine</h3><p>Its Tibetan already extracts as correct Unicode — no repair was needed. Here's what copying from it gives you.</p></div>`
+      : `${badgeOk}
+          <div><h3>The Tibetan here is already correct</h3><p>It extracts as proper Unicode, so no repair was needed. ${unknownSubject} in our database, so if some other text still copies wrong, that's where it comes from. Here's what copying gives you.</p></div>`;
+
+    // 'cant' is reached two different ways. no_match > 0 means we met fonts we
+    // don't cover. no_match === 0 with almost no Tibetan extracted means the
+    // document simply has no Tibetan in it — an English-only PDF used to be told
+    // "none of its N fonts are in our recognition database", which was false.
+    const cantHead = noMatch > 0
+      ? `${badgeWarn}
+          <div><h3>This PDF couldn't be repaired</h3><p>We don't recognise ${unknownObject}, so the Tibetan set in ${noMatch === 1 ? 'it' : 'them'} can't be turned into Unicode. Sending us the file is how ${noMatch === 1 ? 'that font gets' : 'those fonts get'} added.</p></div>`
+      : `${badgeWarn}
+          <div><h3>No Tibetan text found</h3><p>We couldn't find any Tibetan in this document, so there was nothing to repair. If you were expecting Tibetan here, send us the file and we'll look into it.</p></div>`;
+
     const head =
       phase === 'ok' ? `${badgeOk}
-          <div><h3>Your PDF is fixed</h3><p>Copy-paste and text extraction should now return correct Unicode.</p></div>`
-    : phase === 'already' ? `${badgeOk}
-          <div><h3>This PDF is already fine</h3><p>Its Tibetan already extracts as correct Unicode — copy-paste and search work as-is, no repair needed. You can still extract the text below.</p></div>`
+          <div><h3>Your PDF is fixed</h3><p>Here's what copying from it gives you now.</p></div>`
+    : phase === 'already' ? alreadyHead
     : phase === 'partial' ? `${badgeWarn}
-          <div><h3>Partially repaired</h3><p>Most of the Tibetan now copies as correct Unicode, but ${junk} character${junk === 1 ? '' : 's'} across some fonts still aren't recognised — those parts may copy as garbage. This file mixes legacy fonts we don't fully cover yet.</p></div>`
-    : `${badgeWarn}
-          <div><h3>This PDF couldn't be repaired</h3><p>None of its ${seen} fonts are in our recognition database, so its Tibetan can't be turned into Unicode. This file uses legacy fonts we don't cover yet.</p></div>`;
+          <div><h3>${partialHeadline}</h3><p>${tibetan.toLocaleString()} Tibetan characters came out correctly. ${partialBodyTail}</p></div>`
+    : cantHead;
+
+    // The proof: show the repaired Tibetan rather than counting it. 'cant'
+    // produced nothing usable, so it shows neither sample nor figures.
+    const proof = (phase !== 'cant' && sample)
+      ? `<div class="textbox proof">${esc(sample).split('\n').map((l) => `<span class="ln">${l}</span>`).join('')}</div>`
+      : '';
+    // "N of M fonts repaired", not "N fonts repaired": with the stat cards gone
+    // the denominator is the only thing left telling the reader that M - N fonts
+    // went untouched. Dropped entirely when nothing was repaired — "0 of 5 fonts
+    // repaired" under a headline saying no repair was needed reads as a failure.
+    const repaired = fixed > 0
+      ? `<span>${fixed} of ${seen} font${seen === 1 ? '' : 's'} repaired</span><span class="dot"></span>`
+      : '';
+    const figures = phase === 'cant' ? '' : `
+        <div class="proofline">
+          ${repaired}<span>${pages} page${pages === 1 ? '' : 's'}</span><span class="dot"></span>
+          <span>${tibetan.toLocaleString()} Tibetan character${tibetan === 1 ? '' : 's'}</span>
+        </div>`;
 
     const extractBtn = `<button class="btn btn-accent" id="to-extract"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> Extract text</button>`;
     const dlBtn = `<button class="btn btn-primary" id="dl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> Download fixed PDF</button>`;
-    // 'partial' / 'cant' files are exactly what a future "try harder" pass
-    // (lazy-loaded gshape tree) would target; for now we invite the user to send
-    // the file so coverage can be extended.
     const sendBtn = `<a class="btn btn-accent" href="mailto:eroux@bdrc.io?subject=${encodeURIComponent('Unsupported Tibetan PDF')}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="m22 7-10 6L2 7"/></svg> Send us this PDF</a>`;
     const doAnother = `<button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Do another</button>`;
 
@@ -402,13 +467,13 @@ const App = (() => {
       phase === 'ok'      ? `${dlBtn} ${extractBtn} ${doAnother}` :
       phase === 'already' ? `${extractBtn} ${doAnother}` :
       phase === 'partial' ? `${dlBtn} ${extractBtn} ${sendBtn} ${doAnother}` :
-                            `${sendBtn}
-          <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Try another</button>`;
+                            `${sendBtn} <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Try another</button>`;
 
     $('view-result').innerHTML = `
       <div class="panel swap-enter">
         <div class="result-head">${head}</div>
-        <div class="stats">${statCards}</div>
+        ${proof}
+        ${figures}
         <div class="btn-actions" style="flex-wrap:wrap">${actions}</div>
       </div>`;
     if ($('dl')) {
@@ -448,27 +513,80 @@ const App = (() => {
   }
 
   function renderTextResult(r) {
-    const text = r.text || '';
-    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-    const rich = renderBlocks(r.blocks);
+    // Page filtering is just a filter over blocks the worker already returned —
+    // no re-extraction, no worker round-trip. Each block carries its 0-based
+    // page index; 1-based "odd" pages are the even indices.
+    const all = r.blocks || [];
+    let sel = 'all';
+
+    const keep = (b) => sel === 'all'
+      || (sel === 'odd' && b.page % 2 === 0)
+      || (sel === 'even' && b.page % 2 === 1);
+
+    const textOf = (blocks) => blocks
+      .map((b) => (b.lines || []).map((ln) => ln.map((run) => run.t).join('')).join('\n'))
+      .join('\n');
+
     $('view-result').innerHTML = `
       <div class="panel swap-enter">
         <div class="result-head">
           <div class="badge-ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>
-          <div><h3>Text extracted</h3><p>${r.pages_used} of ${r.page_count} page${r.page_count === 1 ? '' : 's'} · formatting preserved</p></div>
+          <div><h3>Text extracted</h3><p>Formatting preserved · Jomolhari for Tibetan</p></div>
         </div>
         <div class="texttools">
-          <span class="fmt">${words.toLocaleString()} words</span>
+          <div class="seg" id="pages-seg">
+            <button data-pages="all" class="on">All pages</button>
+            <button data-pages="odd">Odd</button>
+            <button data-pages="even">Even</button>
+          </div>
+          <span class="fmt" id="text-meta"></span>
         </div>
-        <div class="textbox rich" id="textbox">${rich || '<span style="color:var(--ink-faint)">No extractable text on the selected pages.</span>'}</div>
+        <div class="textbox rich" id="textbox"></div>
         <div class="btn-actions" style="flex-wrap:wrap">
           <button class="btn btn-primary" id="copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</button>
-          <button class="btn btn-ghost" id="save"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> .txt</button>
-          <button class="btn btn-ghost" id="save-docx"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> .docx</button>
+          <button class="btn btn-ghost" id="save">.txt</button>
+          <button class="btn btn-ghost" id="save-docx">.docx</button>
           <button class="btn btn-accent" id="to-fix"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg> Fix the PDF</button>
           <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Do another</button>
         </div>
       </div>`;
+
+    const n = r.page_count || 0;
+    // Pages the *selection* covers, not pages that happened to produce blocks:
+    // counting the latter made a 12-page document with 3 blank pages read
+    // "9 of 12 pages" on All pages, which looks like a filter is on.
+    const selectedPages = () => sel === 'all' ? n : sel === 'odd' ? Math.ceil(n / 2) : Math.floor(n / 2);
+
+    let text = '';
+    function paint() {
+      const blocks = all.filter(keep);
+      text = textOf(blocks);
+      const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+      $('textbox').innerHTML = renderBlocks(blocks)
+        || '<span style="color:var(--ink-faint)">No extractable text on the selected pages.</span>';
+      const pageLabel = sel === 'all'
+        ? `${n} page${n === 1 ? '' : 's'}`
+        : `${selectedPages()} of ${n} page${n === 1 ? '' : 's'}`;
+      $('text-meta').textContent = `${pageLabel} · ${words.toLocaleString()} words`;
+      syncActions();
+    }
+    // An empty selection has nothing to copy, save or serialise. Copy used to
+    // write "" and still toast "Copied to clipboard.", .txt wrote an empty file
+    // and .docx shipped a valid but empty document. The textbox already says
+    // there is no text here; the actions have to agree.
+    function syncActions() {
+      const empty = !text.trim();
+      ['copy', 'save', 'save-docx'].forEach((id) => { const b = $(id); if (b) b.disabled = empty; });
+    }
+    paint();
+
+    const seg = $('pages-seg');
+    seg.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      sel = b.dataset.pages;
+      seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+      paint();
+    }));
+
     $('copy').addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(text); toast('Copied to clipboard.'); }
       catch (_) { toast('Could not copy automatically — select the text.'); }
@@ -476,9 +594,40 @@ const App = (() => {
     $('save').addEventListener('click', () => {
       download(text, baseName() + '.txt', 'text/plain;charset=utf-8');
     });
-    $('save-docx').addEventListener('click', () => {
-      download(r.docxBytes, baseName() + '.docx',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    $('save-docx').addEventListener('click', async () => {
+      const btn = $('save-docx');
+      // extract no longer builds a .docx — every selection, including "all", is
+      // serialised on demand against the cached patched PDF.
+      // Capture sel now: only this button is disabled during the build, so the
+      // pages-seg buttons stay clickable and can reassign sel before the await
+      // below resolves. Both the request and the filename must use the value
+      // that was active when the build was requested, not whatever sel is by
+      // the time the worker replies.
+      const requestedSel = sel;
+      btn.disabled = true;
+      // "Fix the PDF" is the other worker round-trip on this screen. The engine
+      // takes one request at a time, so hold it closed for the duration rather
+      // than letting the user queue a second one behind a multi-minute build.
+      const toFix = $('to-fix');
+      if (toFix) toFix.disabled = true;
+      const prev = btn.textContent;
+      btn.textContent = 'Building…';
+      try {
+        const d = await call('docx', { pages: requestedSel });
+        // "all" keeps the plain name; a filtered download says which half it is.
+        const suffix = requestedSel === 'all' ? '' : '.' + requestedSel;
+        download(d.docxBytes, baseName() + suffix + '.docx',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      } catch {
+        toast('Could not build the .docx.');
+      } finally {
+        btn.disabled = false; btn.textContent = prev;
+        if (toFix) toFix.disabled = false;
+        // The page selection can have moved to an empty one while the build
+        // ran, so settle the actions from the current text rather than leaving
+        // the line above's unconditional re-enable standing.
+        syncActions();
+      }
     });
     $('to-fix').addEventListener('click', () => { state.mode = 'fix'; process(); });
     showView('result');
@@ -516,6 +665,11 @@ const App = (() => {
   }
 
   function reset() {
+    // "Do another", the header logo and the error screen's "Start over" all land
+    // here. Leaving the result screen mid-build would drop the user on the
+    // dropzone with an engine that cannot take a new file for minutes, so hold
+    // them until the request in flight finishes.
+    if (busy()) return toast('Still working on your document — one moment.');
     state = {};
     $('file').value = '';
     showView('upload');

@@ -7,25 +7,26 @@
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=Hanken+Grotesk:wght@400;500;600;700&family=Noto+Serif+Tibetan:wght@400;500;600&display=swap');
 
 :root {
-  /* paper & ink palette */
-  --paper:        #f6f1e7;
-  --paper-deep:   #efe7d7;
-  --card:         #fffdf8;
-  --ink:          #20140a;
-  --ink-soft:     #4f4334;
-  --ink-faint:    #8a7c66;
-  --line:         #e3d8c2;
-  --line-strong:  #d4c6aa;
+  /* paper & ink palette — "Vermillon" */
+  --paper:        #f7f2e8;
+  --paper-deep:   #f0e7d6;
+  --card:         #fffefb;
+  --ink:          #1c1309;
+  --ink-soft:     #4b3f31;
+  --ink-faint:    #877a64;
+  --line:         #e2d7c1;
+  --line-strong:  #d0c09f;
 
-  /* monastic accent */
-  --maroon:       #8a2b22;
-  --maroon-deep:  #6e1f18;
-  --saffron:      #c8642a;
-  --saffron-soft: #e8a35a;
-  --gold:         #b6892f;
+  /* monastic accent — vermilion rather than the former muted maroon.
+     The token names are deliberately unchanged; renaming is a separate task. */
+  --maroon:       #b5342a;
+  --maroon-deep:  #8f2419;
+  --saffron:      #d97528;
+  --saffron-soft: #f0ad63;
+  --gold:         #c0912f;
 
   --ok:           #3f7a52;
-  --warn:         #b06a1f;
+  --warn:         #b8691c;
 
   --radius:       18px;
   --radius-sm:    12px;
@@ -60,10 +61,13 @@ body {
 body::before {
   content: '';
   position: fixed; inset: 0;
+  /* color-mix with transparent is exactly rgba(token, p) — the alpha carries
+     through unchanged — so these stay pinned to the palette instead of holding
+     their own copy of its hex values. */
   background:
-    radial-gradient(1100px 620px at 50% -8%, rgba(200,100,42,.10), transparent 60%),
-    radial-gradient(900px 600px at 92% 8%, rgba(138,43,34,.06), transparent 55%),
-    radial-gradient(800px 700px at 4% 100%, rgba(182,137,47,.06), transparent 55%);
+    radial-gradient(1100px 620px at 50% -8%, color-mix(in srgb, var(--saffron) 10%, transparent), transparent 60%),
+    radial-gradient(900px 600px at 92% 8%, color-mix(in srgb, var(--maroon) 6%, transparent), transparent 55%),
+    radial-gradient(800px 700px at 4% 100%, color-mix(in srgb, var(--gold) 6%, transparent), transparent 55%);
   pointer-events: none; z-index: 0;
 }
 body::after {
@@ -93,7 +97,7 @@ header {
   width: 42px; height: 42px; flex: none; color: var(--maroon);
   position: relative; top: 1px;
   border-radius: 9px; transition: transform .3s var(--ease);
-  filter: drop-shadow(0 2px 4px rgba(138,43,34,.18));
+  filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--maroon) 18%, transparent));
 }
 .brand b {
   font-family: 'Fraunces', serif; font-weight: 500; font-size: 1.28rem;
@@ -101,7 +105,7 @@ header {
 }
 .brand span { display:block; font-size: .82rem; color: var(--ink-faint); margin-top: 2px; }
 .byline { font-size: .76rem; color: var(--ink-faint); text-align: right; line-height:1.4; }
-.byline a { color: var(--maroon); text-decoration: none; border-bottom: 1px solid rgba(138,43,34,.25); }
+.byline a { color: var(--maroon); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--maroon) 25%, transparent); }
 
 /* ----------------------------------------------------------- hero */
 .hero { text-align: center; padding: 58px 0 40px; }
@@ -109,7 +113,7 @@ header {
   display: inline-block; font-size: .74rem; letter-spacing: .22em; text-transform: uppercase;
   color: var(--saffron); font-weight: 600; margin-bottom: 20px;
   padding: 6px 14px; border: 1px solid var(--line-strong); border-radius: 999px;
-  background: rgba(255,253,248,.6);
+  background: color-mix(in srgb, var(--card) 60%, transparent);
 }
 .hero h1 {
   font-family: 'Fraunces', serif; font-optical-sizing: auto;
@@ -144,13 +148,13 @@ header {
 .drop:hover { border-color: var(--saffron); transform: translateY(-2px); box-shadow: var(--shadow-lg); }
 .drop.drag {
   border-color: var(--maroon); border-style: solid;
-  background: linear-gradient(180deg, #fffdf8, #fbf3e8);
+  background: linear-gradient(180deg, var(--card), var(--paper-deep));
   transform: scale(1.005);
 }
 .drop-ico {
   width: 64px; height: 64px; margin: 0 auto 22px; color: var(--maroon);
   display: grid; place-items: center; border-radius: 50%;
-  background: radial-gradient(circle at 50% 35%, #fbeada, #f4e2c9);
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--saffron-soft) 26%, var(--card)), color-mix(in srgb, var(--saffron-soft) 42%, var(--card)));
   box-shadow: inset 0 1px 0 #fff, var(--shadow-sm);
   transition: transform .5s var(--ease-out);
 }
@@ -166,11 +170,11 @@ header {
 .docrow { display:flex; align-items:center; gap: 16px; }
 .doc-ico {
   width: 46px; height: 56px; flex:none; border-radius: 8px;
-  background: linear-gradient(160deg, #fbeede, #f1dcc0); border:1px solid var(--line-strong);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--saffron-soft) 20%, var(--card)), color-mix(in srgb, var(--saffron-soft) 38%, var(--card))); border:1px solid var(--line-strong);
   position: relative; box-shadow: var(--shadow-sm);
   display:grid; place-items:center; color: var(--maroon); font-size:.62rem; font-weight:700; letter-spacing:.05em;
 }
-.doc-ico::after{ content:''; position:absolute; top:0; right:0; border-width:0 14px 14px 0; border-style:solid; border-color:#e7d3b3 var(--card) ; border-radius:0 8px 0 0;}
+.doc-ico::after{ content:''; position:absolute; top:0; right:0; border-width:0 14px 14px 0; border-style:solid; border-color:var(--line-strong) var(--card) ; border-radius:0 8px 0 0;}
 .doc-meta { flex: 1; min-width: 0; }
 .doc-meta h3 { font-size: 1.05rem; font-weight: 600; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
 .doc-meta .sub { color: var(--ink-faint); font-size: .88rem; margin-top: 2px; }
@@ -207,7 +211,7 @@ header {
   display:flex; gap: 13px; align-items:flex-start;
 }
 .tile:hover { border-color: var(--line-strong); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
-.tile.on { border-color: var(--maroon); background: linear-gradient(180deg,#fffdf8,#fcf4ea); box-shadow: 0 0 0 3px rgba(138,43,34,.10); }
+.tile.on { border-color: var(--maroon); background: linear-gradient(180deg, var(--card), color-mix(in srgb, var(--saffron-soft) 12%, var(--card))); box-shadow: 0 0 0 3px color-mix(in srgb, var(--maroon) 12%, transparent); }
 .tile .ti { width:34px;height:34px;flex:none;border-radius:10px;display:grid;place-items:center;background:var(--paper-deep);color:var(--maroon); transition: background .25s, color .25s;}
 .tile.on .ti { background: var(--maroon); color:#fff; }
 .tile h4 { font-size:.98rem; font-weight:600; }
@@ -220,9 +224,6 @@ header {
   padding: 8px 18px; border-radius: 9px; cursor:pointer; transition: all .22s var(--ease);
 }
 .seg button.on { background: var(--card); color: var(--maroon); box-shadow: var(--shadow-sm); font-weight:600; }
-.field-row { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-.field-row .lab h4 { font-size:.96rem; font-weight:600; }
-.field-row .lab p { font-size:.82rem; color: var(--ink-faint); }
 
 /* ----------------------------------------------------------- buttons */
 .btn {
@@ -239,20 +240,30 @@ header {
   box-shadow: 0 1px 3px -1px rgba(44,28,12,.15);
 }
 .btn-primary:hover { background: var(--maroon-deep); transform: translateY(-1px);
-  box-shadow: 0 8px 18px -8px rgba(138,43,34,.45); }
+  box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--maroon) 45%, transparent); }
 .btn-primary:active { background: var(--maroon-deep); transform: translateY(0);
   box-shadow: 0 1px 3px -1px rgba(44,28,12,.18); }
-.btn-primary:disabled { opacity:.5; cursor: default; transform:none; box-shadow:none; }
 .btn-ghost { background: var(--paper-deep); color: var(--ink); border:1px solid var(--line); }
-.btn-ghost:hover { background:#fff; box-shadow: 0 4px 12px -6px rgba(44,28,12,.22); }
+.btn-ghost:hover { background: var(--card); box-shadow: 0 4px 12px -6px rgba(44,28,12,.22); }
 /* accent: the "switch mode" action (Extract text / Fix the PDF) — flat saffron tint */
-.btn-accent { background: #f5e7ce; color: var(--maroon-deep); border:1px solid var(--saffron-soft); }
-.btn-accent:hover { background: #efddbb; box-shadow: 0 6px 14px -7px rgba(200,100,42,.38); }
+.btn-accent { background: color-mix(in srgb, var(--saffron-soft) 34%, var(--card)); color: var(--maroon-deep); border:1px solid var(--saffron-soft); }
+.btn-accent:hover { background: color-mix(in srgb, var(--saffron-soft) 46%, var(--card)); box-shadow: 0 6px 14px -7px color-mix(in srgb, var(--saffron) 38%, transparent); }
 /* quiet: the low-emphasis "start over" action (Do another) — outlined, transparent */
 .btn-quiet { background: transparent; color: var(--ink-faint); border:1px solid var(--line); }
 .btn-quiet:hover { color: var(--maroon); background: var(--paper-deep); border-color: var(--line-strong); }
+/* Applies to every variant, and last so it wins over the :hover rules above:
+   an empty page selection disables Copy / .txt / .docx, and the .docx build
+   disables its own button and "Fix the PDF". */
+.btn:disabled { opacity:.5; cursor: default; transform:none; box-shadow:none; }
 .btn-actions { display:flex; gap:12px; margin-top: 26px; }
-.btn-actions .btn-primary { width:auto; flex:1; }
+/* flex:1 resolves to flex-basis:0, so the primary was squeezed by its siblings
+   and "Download fixed PDF" wrapped onto two lines. flex:0 0 auto fixes that,
+   but a lone primary (no siblings to be squeezed by) would otherwise shrink to
+   its label and hug the left edge — :only-child restores the full-width
+   "stamp" for that case (config screen's "Fix & download", the no-text
+   result's "Try another file"). */
+.btn-actions .btn-primary { width:auto; flex:0 0 auto; white-space:nowrap; }
+.btn-actions .btn-primary:only-child { width:100%; }
 
 /* ----------------------------------------------------------- processing */
 .processing { text-align:center; padding: 50px 20px; }
@@ -261,7 +272,7 @@ header {
 .mandala .r1 { border-top-color: var(--maroon); border-right-color: var(--maroon); animation: spin 1.1s linear infinite; }
 .mandala .r2 { inset: 14px; border-bottom-color: var(--saffron); border-left-color: var(--saffron); animation: spin 1.5s linear infinite reverse; }
 .mandala .r3 { inset: 28px; border-top-color: var(--gold); animation: spin 0.9s linear infinite; }
-.mandala .dot { position:absolute; inset:38px; border-radius:50%; background: radial-gradient(circle,#fbeada,#e9c79b); }
+.mandala .dot { position:absolute; inset:38px; border-radius:50%; background: radial-gradient(circle, color-mix(in srgb, var(--saffron-soft) 26%, var(--card)), var(--saffron-soft)); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .processing h3 { font-family:'Fraunces',serif; font-weight:450; font-size:1.5rem; }
 .processing p { color: var(--ink-faint); margin-top: 8px; }
@@ -275,20 +286,32 @@ header {
 /* ----------------------------------------------------------- result */
 .result-head { display:flex; align-items:center; gap:14px; margin-bottom: 6px; }
 .badge-ok { width:42px;height:42px;flex:none;border-radius:50%; display:grid;place-items:center; color:#fff;
-  background: linear-gradient(180deg,#4a8b60,#3f7a52); box-shadow: var(--shadow-sm); animation: pop .5s var(--ease-out) both; }
+  background: var(--ok); box-shadow: var(--shadow-sm); animation: pop .5s var(--ease-out) both; }
 .badge-warn { width:42px;height:42px;flex:none;border-radius:50%; display:grid;place-items:center; color:#fff;
-  background: linear-gradient(180deg,#e8a35a,#c8642a); box-shadow: var(--shadow-sm); animation: pop .5s var(--ease-out) both; }
+  background: linear-gradient(180deg, var(--saffron-soft), var(--saffron)); box-shadow: var(--shadow-sm); animation: pop .5s var(--ease-out) both; }
 @keyframes pop { 0%{transform:scale(.4);opacity:0} 60%{transform:scale(1.08)} 100%{transform:scale(1);opacity:1} }
 .result-head h3 { font-family:'Fraunces',serif; font-weight:450; font-size:1.5rem; }
 .result-head p { color: var(--ink-faint); font-size:.9rem; }
 
-.stats { display:grid; grid-template-columns: repeat(auto-fit, minmax(110px,1fr)); gap: 12px; margin: 22px 0; }
-.stat { background: var(--paper-deep); border:1px solid var(--line); border-radius: var(--radius); padding: 16px; text-align:center; }
-.stat b { display:block; font-family:'Fraunces',serif; font-size: 1.9rem; font-weight:500; color: var(--maroon); line-height:1; }
-.stat span { display:block; font-size:.76rem; color: var(--ink-faint); margin-top: 8px; text-transform:uppercase; letter-spacing:.08em; }
+/* R3 report: the proof is a sample of the repaired text, not a stat card. */
+.textbox.proof { max-height: 200px; margin-top: 18px; }
+.proofline {
+  font-size:.82rem; color: var(--ink-faint); margin-top: 12px;
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+}
+.proofline .dot { width:4px; height:4px; border-radius:50%; background: var(--line-strong); }
+.fontname {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.9em;
+  background: var(--paper-deep); border:1px solid var(--line);
+  border-radius:5px; padding:1px 6px;
+}
 
 /* extracted text */
-.texttools { display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; gap:12px; }
+/* Holds the All/Odd/Even control and the word/page meta. The segmented control
+   plus the meta line do not fit side by side inside the panel on a narrow
+   phone, so let them stack instead of squeezing both to min-content — which
+   wrapped the labels inside the segment buttons. */
+.texttools { display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; gap:12px; flex-wrap: wrap; }
 .texttools .fmt { font-size:.78rem; color: var(--ink-faint); text-transform:uppercase; letter-spacing:.1em; }
 @font-face {
   font-family: 'Jomolhari';
@@ -296,23 +319,27 @@ header {
   font-display: swap;
 }
 .textbox {
-  background: #fffefb; border:1px solid var(--line); border-radius: var(--radius);
+  background: color-mix(in srgb, var(--card) 88%, var(--paper)); border:1px solid var(--line); border-radius: var(--radius);
   padding: 22px; max-height: 440px; overflow:auto;
   font-family: 'Jomolhari','Noto Serif Tibetan', ui-serif, Georgia, serif;
   font-size: 1.02rem; line-height: 1.9; color: var(--ink);
   white-space: pre-wrap; word-break: break-word; box-shadow: inset 0 1px 3px rgba(44,28,12,.03);
 }
-.textbox::-webkit-scrollbar{ width:10px; } .textbox::-webkit-scrollbar-thumb{ background: var(--line-strong); border-radius:99px; border:3px solid #fffefb;}
+.textbox::-webkit-scrollbar{ width:10px; } .textbox::-webkit-scrollbar-thumb{ background: var(--line-strong); border-radius:99px; border:3px solid var(--card);}
 /* formatting-preserving preview: blocks (paragraphs) -> lines -> styled runs */
 .textbox.rich { white-space: normal; }
 .textbox.rich .para { margin: 0 0 .8em; }
 .textbox.rich .para:last-child { margin-bottom: 0; }
-.textbox.rich .ln { display:block; }
+/* .ln is block in both .rich (per-line preview) and .proof (R3 sample) — the
+   sample's lines are joined with no separator (see renderPdfResult), so
+   block display stacks them cleanly without an extra blank line from a
+   preserved newline. */
+.textbox .ln { display:block; }
 .textbox.rich span { font-family: inherit; }
 
 /* error */
 .err { text-align:center; padding: 40px 20px; }
-.err .x { width:46px;height:46px;margin:0 auto 18px;border-radius:50%; display:grid;place-items:center; color:#fff; background: linear-gradient(180deg,#b5483c,#8a2b22); }
+.err .x { width:46px;height:46px;margin:0 auto 18px;border-radius:50%; display:grid;place-items:center; color:#fff; background: linear-gradient(180deg, var(--maroon), var(--maroon-deep)); }
 .err h3 { font-family:'Fraunces',serif; font-weight:450; font-size:1.4rem; }
 .err p { color: var(--ink-soft); margin-top: 8px; max-width: 32em; margin-inline:auto; }
 
@@ -320,7 +347,7 @@ header {
 footer { text-align:center; margin-top: 60px; color: var(--ink-faint); font-size:.82rem; }
 footer a { color: var(--maroon); text-decoration:none; }
 footer .feedback { max-width: 40em; margin: 0 auto 26px; line-height:1.5; }
-footer .feedback a { border-bottom: 1px solid rgba(138,43,34,.25); }
+footer .feedback a { border-bottom: 1px solid color-mix(in srgb, var(--maroon) 25%, transparent); }
 .credit { display:flex; flex-direction:column; align-items:center; gap:14px; padding-top:22px; border-top:1px solid var(--line, rgba(0,0,0,.08)); }
 .credit-logos { display:flex; align-items:center; gap:24px; }
 .credit-logos a { display:inline-flex; align-items:center; }
@@ -361,7 +388,7 @@ footer .feedback a { border-bottom: 1px solid rgba(138,43,34,.25); }
 [hidden] { display: none !important; }
 .toast {
   position: fixed; left:50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
-  background: var(--ink); color: #fbf3e8; padding: 12px 20px; border-radius: 12px; font-size:.9rem;
+  background: var(--ink); color: var(--paper-deep); padding: 12px 20px; border-radius: 12px; font-size:.9rem;
   box-shadow: var(--shadow-lg); opacity:0; transition: all .35s var(--ease); z-index: 50; pointer-events:none;
 }
 .toast.show { opacity:1; transform: translateX(-50%) translateY(0); }
