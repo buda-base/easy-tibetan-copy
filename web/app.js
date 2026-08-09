@@ -127,7 +127,7 @@ const App = (() => {
     if (kind === 'doc') return noticeDoc();
     if (kind === 'unknown') return toast('Please choose a PDF, Word (.docx) or RTF file.');
 
-    state = { filename: file.name, kind, mode: 'fix', pages: 'all' };
+    state = { filename: file.name, kind, mode: 'fix' };
 
     const mb = file.size / 1048576;
     if (mb > WARN_MB && !file._confirmed) return renderSizeWarning(file, mb);
@@ -285,17 +285,6 @@ const App = (() => {
               </button>
             </div>
           </div>
-
-          <div id="extract-opts" ${state.mode === 'extract' ? '' : 'hidden'}>
-            <div class="field-row">
-              <div class="lab"><h4>Which pages?</h4><p>Useful for pecha-style books printed two-up.</p></div>
-              <div class="seg" id="pages-seg">
-                <button data-pages="all" class="on">All</button>
-                <button data-pages="odd">Odd</button>
-                <button data-pages="even">Even</button>
-              </div>
-            </div>
-          </div>
         </div>
 
         <details class="fonts-reveal">
@@ -313,13 +302,7 @@ const App = (() => {
     $('view-config').querySelectorAll('.tile').forEach((t) => t.addEventListener('click', () => {
       state.mode = t.dataset.mode;
       $('view-config').querySelectorAll('.tile').forEach((x) => x.classList.toggle('on', x === t));
-      $('extract-opts').hidden = state.mode !== 'extract';
       $('go-label').textContent = state.mode === 'fix' ? 'Fix & download' : 'Extract text';
-    }));
-    const seg = $('pages-seg');
-    if (seg) seg.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
-      state.pages = b.dataset.pages;
-      seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
     }));
     $('go').addEventListener('click', submit);
 
@@ -339,7 +322,7 @@ const App = (() => {
         const r = await call('fix');
         renderPdfResult(r.stats || {}, r.pdfBytes);
       } else {
-        const r = await call('extract', { pages: state.pages || 'all' });
+        const r = await call('extract');
         renderTextResult(r);
       }
     } catch (err) { showError(err.message); }
@@ -464,27 +447,64 @@ const App = (() => {
   }
 
   function renderTextResult(r) {
-    const text = r.text || '';
-    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-    const rich = renderBlocks(r.blocks);
+    // Page filtering is just a filter over blocks the worker already returned —
+    // no re-extraction, no worker round-trip. Each block carries its 0-based
+    // page index; 1-based "odd" pages are the even indices.
+    const all = r.blocks || [];
+    let sel = 'all';
+
+    const keep = (b) => sel === 'all'
+      || (sel === 'odd' && b.page % 2 === 0)
+      || (sel === 'even' && b.page % 2 === 1);
+
+    const textOf = (blocks) => blocks
+      .map((b) => (b.lines || []).map((ln) => ln.map((run) => run.t).join('')).join('\n'))
+      .join('\n');
+
     $('view-result').innerHTML = `
       <div class="panel swap-enter">
         <div class="result-head">
           <div class="badge-ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>
-          <div><h3>Text extracted</h3><p>${r.pages_used} of ${r.page_count} page${r.page_count === 1 ? '' : 's'} · formatting preserved</p></div>
+          <div><h3>Text extracted</h3><p>Formatting preserved · Jomolhari for Tibetan</p></div>
         </div>
         <div class="texttools">
-          <span class="fmt">${words.toLocaleString()} words</span>
+          <div class="seg" id="pages-seg">
+            <button data-pages="all" class="on">All pages</button>
+            <button data-pages="odd">Odd</button>
+            <button data-pages="even">Even</button>
+          </div>
+          <span class="fmt" id="text-meta"></span>
         </div>
-        <div class="textbox rich" id="textbox">${rich || '<span style="color:var(--ink-faint)">No extractable text on the selected pages.</span>'}</div>
+        <div class="textbox rich" id="textbox"></div>
         <div class="btn-actions" style="flex-wrap:wrap">
           <button class="btn btn-primary" id="copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</button>
-          <button class="btn btn-ghost" id="save"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> .txt</button>
-          <button class="btn btn-ghost" id="save-docx"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> .docx</button>
+          <button class="btn btn-ghost" id="save">.txt</button>
+          <button class="btn btn-ghost" id="save-docx">.docx</button>
           <button class="btn btn-accent" id="to-fix"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg> Fix the PDF</button>
           <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Do another</button>
         </div>
       </div>`;
+
+    function paint() {
+      const blocks = all.filter(keep);
+      const text = textOf(blocks);
+      const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+      const used = new Set(blocks.map((b) => b.page)).size;
+      $('textbox').innerHTML = renderBlocks(blocks)
+        || '<span style="color:var(--ink-faint)">No extractable text on the selected pages.</span>';
+      $('text-meta').textContent =
+        `${used} of ${r.page_count} page${r.page_count === 1 ? '' : 's'} · ${words.toLocaleString()} words`;
+      return text;
+    }
+    let text = paint();
+
+    const seg = $('pages-seg');
+    seg.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+      sel = b.dataset.pages;
+      seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+      text = paint();
+    }));
+
     $('copy').addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(text); toast('Copied to clipboard.'); }
       catch (_) { toast('Could not copy automatically — select the text.'); }
@@ -492,9 +512,24 @@ const App = (() => {
     $('save').addEventListener('click', () => {
       download(text, baseName() + '.txt', 'text/plain;charset=utf-8');
     });
-    $('save-docx').addEventListener('click', () => {
-      download(r.docxBytes, baseName() + '.docx',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    $('save-docx').addEventListener('click', async () => {
+      const btn = $('save-docx');
+      // extract no longer builds a .docx — every selection, including "all", is
+      // serialised on demand against the cached patched PDF.
+      btn.disabled = true;
+      const prev = btn.textContent;
+      btn.textContent = 'Building…';
+      try {
+        const d = await call('docx', { pages: sel });
+        // "all" keeps the plain name; a filtered download says which half it is.
+        const suffix = sel === 'all' ? '' : '.' + sel;
+        download(d.docxBytes, baseName() + suffix + '.docx',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      } catch (err) {
+        toast('Could not build the .docx.');
+      } finally {
+        btn.disabled = false; btn.textContent = prev;
+      }
     });
     $('to-fix').addEventListener('click', () => { state.mode = 'fix'; process(); });
     showView('result');
