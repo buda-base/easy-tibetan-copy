@@ -115,6 +115,99 @@ def _patch_best(src, dst):
     stats["junk_fonts"] = _junk_fonts(dst) if junk > 0 else []
     stats["strategy"] = strategy
     return stats
+
+_PATCH_CACHE = {}
+
+def _ensure_patched():
+    # fix and extract are the same patch operation. Doing it once means
+    # fix -> extract, and switching page filters, cost nothing extra.
+    if not _PATCH_CACHE:
+        _PATCH_CACHE.update(_patch_best("/in.pdf", "/patched.pdf"))
+    return dict(_PATCH_CACHE)
+
+TIB_FONT = "Jomolhari"        # Unicode Tibetan font for Tibetan runs
+LATIN_FONT = "Times New Roman" # everything else
+
+# Legacy Tibetan fonts pack glyphs across the full single-byte range, so PyMuPDF
+# can hand back NUL/control chars that python-docx (lxml) refuses to serialize.
+# Strip everything XML 1.0 forbids, keeping tab / newline / carriage-return.
+_XML_BAD = re.compile('[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\ufffe\\uffff]')
+
+def _xml_clean(s):
+    # _clean (defined above) already turns the Control-Pictures open-box
+    # glyph back into a space and drops the other control-picture stand-ins.
+    return _clean(_XML_BAD.sub('', s))
+
+def _attrs(span):
+    flags = span.get("flags", 0) or 0
+    name = (span.get("font") or "").lower()
+    bold = bool(flags & 16) or "bold" in name
+    italic = bool(flags & 2) or "italic" in name or "oblique" in name
+    size = round(float(span.get("size") or 0), 1)
+    return bold, italic, size
+
+def _is_tibetan(s):
+    return any(0x0F00 <= ord(c) <= 0x0FFF for c in s)
+
+def _set_font(run, name):
+    # Set every font slot (ascii/hAnsi + complex-script cs) so Word uses this
+    # font whichever way it classifies the characters. python-docx is
+    # deliberately not installed in the venv that execs this boot block in
+    # tests/test_worker_matches_junk_metric.py, so the import stays local to
+    # this function -- it only runs in the browser, after boot's micropip
+    # install of python-docx above.
+    from docx.oxml.ns import qn
+    run.font.name = name
+    rpr = run._element.get_or_add_rPr()
+    rfonts = rpr.find(qn('w:rFonts'))
+    if rfonts is None:
+        from docx.oxml import OxmlElement
+        rfonts = OxmlElement('w:rFonts'); rpr.append(rfonts)
+    for a in ('w:ascii', 'w:hAnsi', 'w:cs'):
+        rfonts.set(qn(a), name)
+
+def _build_docx(d, sel, out_path):
+    # Same reason as _set_font: keep python-docx out of the module-level
+    # imports so this boot block still execs without it installed.
+    from docx import Document
+    from docx.shared import Pt
+    doc = Document()
+    doc.styles['Normal'].font.name = LATIN_FONT   # avoid the Cambria default
+    for pi in sel:
+        for blk in d[pi].get_text("dict").get("blocks", []):
+            if blk.get("type", 0) != 0:
+                continue  # skip image blocks
+            lines = blk.get("lines", [])
+            para = doc.add_paragraph()
+            non_empty = False
+            for li, line in enumerate(lines):
+                run_list = []
+                for span in line.get("spans", []):
+                    t = _xml_clean(span.get("text", ""))
+                    if not t:
+                        continue
+                    b, it, sz = _attrs(span)
+                    tib = _is_tibetan(t)
+                    # Coalesce adjacent spans that share a style into one run.
+                    # Legacy Tibetan lines come back as dozens of single-glyph
+                    # spans; one docx run (+ font element) per span is what
+                    # makes a 265-page book take minutes to serialise.
+                    if (run_list and run_list[-1]["b"] == b and run_list[-1]["i"] == it
+                            and run_list[-1]["s"] == sz and run_list[-1]["tib"] == tib):
+                        run_list[-1]["t"] += t
+                    else:
+                        run_list.append({"t": t, "s": sz, "b": b, "i": it, "tib": tib})
+                    non_empty = True
+                for m in run_list:
+                    r = para.add_run(m["t"])
+                    r.bold = m["b"]; r.italic = m["i"]
+                    if m["s"]: r.font.size = Pt(m["s"])
+                    _set_font(r, TIB_FONT if m["tib"] else LATIN_FONT)
+                if li < len(lines) - 1:
+                    para.add_run().add_break()
+            if not non_empty:
+                para._element.getparent().remove(para._element)
+    doc.save(out_path)
 `);
     post('progress', { phase: 'ready' });
     return py;
@@ -125,6 +218,15 @@ def _patch_best(src, dst):
 async function analyze(bytes) {
   await boot();
   py.FS.writeFile('/in.pdf', bytes);
+  // A new document invalidates the memoised patch from the previous one.
+  await py.runPythonAsync(`
+import os
+_PATCH_CACHE.clear()
+try:
+    os.unlink("/patched.pdf")
+except OSError:
+    pass
+`);
   const json = await py.runPythonAsync(`
 import json, pymupdf
 d = pymupdf.open("/in.pdf")
@@ -150,82 +252,35 @@ json.dumps({"page_count": d.page_count, "fonts": fonts,
 
 async function fix() {
   post('progress', { phase: 'working' });
-  // _patch_best (defined at boot) runs gid, then escalates to the PUA-free tree
-  // if the output still extracts junk; it returns stats plus tibetan_chars,
-  // junk_chars, and the winning strategy. junk_chars drives the honest result
-  // message: "fixed" (junk 0) vs "partially repaired" (junk left).
+  // _ensure_patched runs gid, then escalates to the PUA-free tree if the output
+  // still extracts hard junk, and memoises the result. junk_chars drives the
+  // honest verdict: 0 = clean, > 0 = some runs still copy as garbage.
   const stats = await py.runPythonAsync(`
 import json
-_stats = _patch_best("/in.pdf", "/out.pdf")
-json.dumps(_stats, default=str)
+json.dumps(_ensure_patched(), default=str)
 `);
-  const out = py.FS.readFile('/out.pdf');
-  py.FS.unlink('/out.pdf');
+  const out = py.FS.readFile('/patched.pdf');
   return { stats: JSON.parse(stats), pdfBytes: out };
 }
 
-async function extract(pages) {
+async function extract() {
   post('progress', { phase: 'working' });
-  py.globals.set('_PAGES', pages || 'all');
-  // Patch (so legacy fonts come out as Unicode) then extract a formatting-aware
-  // model: blocks (paragraphs) -> lines -> runs {t,s,b,i}. The same model drives
-  // the on-screen preview and a formatted .docx (Tibetan rendered with Jomolhari).
+  // _ensure_patched (from the boot block) is shared with fix(), so switching
+  // page filters or re-running extract after a fix costs nothing extra.
+  // Extract a formatting-aware model: blocks (paragraphs) -> lines -> runs
+  // {t,s,b,i,tib}, each block tagged with the page it came from so the UI
+  // can filter client-side. The .docx (all pages) is built in the same pass
+  // via the shared _build_docx, since that's the common case.
   const metaJson = await py.runPythonAsync(`
-import json, re, pymupdf, pdf_cmap_fix
-from docx import Document
-from docx.shared import Pt
-from docx.oxml.ns import qn
+import json, pymupdf
 
-TIB_FONT = "Jomolhari"        # Unicode Tibetan font for Tibetan runs
-LATIN_FONT = "Times New Roman" # everything else
-
-# Legacy Tibetan fonts pack glyphs across the full single-byte range, so PyMuPDF
-# can hand back NUL/control chars that python-docx (lxml) refuses to serialize.
-# Strip everything XML 1.0 forbids, keeping tab / newline / carriage-return.
-_XML_BAD = re.compile('[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\ufffe\\uffff]')
-def _xml_clean(s):
-    # _clean (defined at boot) already turns the Control-Pictures open-box
-    # glyph back into a space and drops the other control-picture stand-ins.
-    # Reuse it instead of rebinding a second _CTRL_PICS in this block's
-    # globals -- Pyodide keeps one persistent Python namespace across boot()
-    # and extract(), so a second binding here would shadow the boot-level one
-    # and _patch_best's _clean (called below) would silently pick it up.
-    return _clean(_XML_BAD.sub('', s))
-
-def _attrs(span):
-    flags = span.get("flags", 0) or 0
-    name = (span.get("font") or "").lower()
-    bold = bool(flags & 16) or "bold" in name
-    italic = bool(flags & 2) or "italic" in name or "oblique" in name
-    size = round(float(span.get("size") or 0), 1)
-    return bold, italic, size
-
-def _is_tibetan(s):
-    return any(0x0F00 <= ord(c) <= 0x0FFF for c in s)
-
-def _set_font(run, name):
-    # Set every font slot (ascii/hAnsi + complex-script cs) so Word uses this
-    # font whichever way it classifies the characters.
-    run.font.name = name
-    rpr = run._element.get_or_add_rPr()
-    rfonts = rpr.find(qn('w:rFonts'))
-    if rfonts is None:
-        from docx.oxml import OxmlElement
-        rfonts = OxmlElement('w:rFonts'); rpr.append(rfonts)
-    for a in ('w:ascii', 'w:hAnsi', 'w:cs'):
-        rfonts.set(qn(a), name)
-
-# Same gid -> PUA-free escalation as the fix path, so the extracted text/.docx
-# use whichever lookup tree yields the least junk (issue #16).
-_patch_best("/in.pdf", "/patched.pdf")
+_ensure_patched()
 d = pymupdf.open("/patched.pdf")
 n = d.page_count
 sel = list(range(n))
-if _PAGES == 'odd':   sel = [i for i in sel if i % 2 == 0]   # 1-based odd  -> indices 0,2,4...
-elif _PAGES == 'even': sel = [i for i in sel if i % 2 == 1]  # 1-based even -> indices 1,3,5...
 
-doc = Document()
-doc.styles['Normal'].font.name = LATIN_FONT   # avoid the Cambria default
+_build_docx(d, sel, "/out.docx")
+
 blocks_out = []
 plain = []
 for pi in sel:
@@ -234,8 +289,6 @@ for pi in sel:
             continue  # skip image blocks
         lines = blk.get("lines", [])
         disp_lines = []
-        para = doc.add_paragraph()
-        non_empty = False
         for li, line in enumerate(lines):
             run_list = []
             for span in line.get("spans", []):
@@ -246,40 +299,48 @@ for pi in sel:
                 tib = _is_tibetan(t)
                 # Coalesce adjacent spans that share a style into one run.
                 # Legacy Tibetan lines come back as dozens of single-glyph
-                # spans; one docx run (+ font element) per span is what makes a
-                # 265-page book take minutes to serialise in the browser.
+                # spans; one run per span made the on-screen model huge on a
+                # 265-page book.
                 if (run_list and run_list[-1]["b"] == b and run_list[-1]["i"] == it
                         and run_list[-1]["s"] == sz and run_list[-1]["tib"] == tib):
                     run_list[-1]["t"] += t
                 else:
                     run_list.append({"t": t, "s": sz, "b": b, "i": it, "tib": tib})
                 plain.append(t)
-                non_empty = True
-            for m in run_list:
-                r = para.add_run(m["t"])
-                r.bold = m["b"]; r.italic = m["i"]
-                if m["s"]: r.font.size = Pt(m["s"])
-                _set_font(r, TIB_FONT if m["tib"] else LATIN_FONT)
             if li < len(lines) - 1:
-                para.add_run().add_break()
                 plain.append("\\n")
             if run_list:
                 disp_lines.append(run_list)
         plain.append("\\n")
         if disp_lines:
-            blocks_out.append({"lines": disp_lines})
-        if not non_empty:
-            para._element.getparent().remove(para._element)
+            blocks_out.append({"page": pi, "lines": disp_lines})
 
-doc.save("/out.docx")
 globals()['_TXT'] = "".join(plain)
-json.dumps({"page_count": n, "pages_used": len(sel), "blocks": blocks_out})
+json.dumps({"page_count": n, "blocks": blocks_out})
 `);
   const text = String(py.globals.get('_TXT'));
   const docxBytes = py.FS.readFile('/out.docx');
   py.FS.unlink('/out.docx');
-  py.FS.unlink('/patched.pdf');
   return { ...JSON.parse(metaJson), text, docxBytes };
+}
+
+// The .docx is serialised in Python, so a page filter cannot be applied in the
+// browser the way the on-screen text can. Rebuild it on demand — /patched.pdf
+// is cached, so this re-serialises without re-repairing.
+async function buildDocx(pages) {
+  post('progress', { phase: 'working' });
+  py.globals.set('_PAGES', pages || 'all');
+  await py.runPythonAsync(`
+d = pymupdf.open("/patched.pdf")
+sel = list(range(d.page_count))
+if _PAGES == 'odd':    sel = [i for i in sel if i % 2 == 0]   # 1-based odd  -> 0,2,4...
+elif _PAGES == 'even': sel = [i for i in sel if i % 2 == 1]   # 1-based even -> 1,3,5...
+_build_docx(d, sel, "/out.docx")
+d.close()
+`);
+  const docxBytes = py.FS.readFile('/out.docx');
+  py.FS.unlink('/out.docx');
+  return { docxBytes };
 }
 
 self.onmessage = async (e) => {
@@ -288,7 +349,8 @@ self.onmessage = async (e) => {
     if (m.type === 'boot') { await boot(); return; }
     if (m.type === 'analyze') { return post('analyzed', await analyze(new Uint8Array(m.bytes))); }
     if (m.type === 'fix')     { const r = await fix();          return post('fixed', r, [r.pdfBytes.buffer]); }
-    if (m.type === 'extract') { const r = await extract(m.pages); return post('extracted', r, [r.docxBytes.buffer]); }
+    if (m.type === 'extract') { const r = await extract();          return post('extracted', r, [r.docxBytes.buffer]); }
+    if (m.type === 'docx')    { const r = await buildDocx(m.pages); return post('docx-built', r, [r.docxBytes.buffer]); }
   } catch (err) {
     post('error', { message: (err && err.message) ? err.message : String(err) });
   }
