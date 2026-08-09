@@ -269,8 +269,9 @@ async function extract() {
   // page filters or re-running extract after a fix costs nothing extra.
   // Extract a formatting-aware model: blocks (paragraphs) -> lines -> runs
   // {t,s,b,i,tib}, each block tagged with the page it came from so the UI
-  // can filter client-side. The .docx (all pages) is built in the same pass
-  // via the shared _build_docx, since that's the common case.
+  // can filter client-side. No .docx here -- most users never download one,
+  // so building it eagerly on every extract charged everyone for a rare
+  // action. buildDocx() below builds it on demand instead.
   const metaJson = await py.runPythonAsync(`
 import json, pymupdf
 
@@ -278,8 +279,6 @@ _ensure_patched()
 d = pymupdf.open("/patched.pdf")
 n = d.page_count
 sel = list(range(n))
-
-_build_docx(d, sel, "/out.docx")
 
 blocks_out = []
 plain = []
@@ -319,18 +318,22 @@ globals()['_TXT'] = "".join(plain)
 json.dumps({"page_count": n, "blocks": blocks_out})
 `);
   const text = String(py.globals.get('_TXT'));
-  const docxBytes = py.FS.readFile('/out.docx');
-  py.FS.unlink('/out.docx');
-  return { ...JSON.parse(metaJson), text, docxBytes };
+  return { ...JSON.parse(metaJson), text };
 }
 
 // The .docx is serialised in Python, so a page filter cannot be applied in the
-// browser the way the on-screen text can. Rebuild it on demand — /patched.pdf
-// is cached, so this re-serialises without re-repairing.
+// browser the way the on-screen text can. Build it on demand — the only path
+// to a .docx now, per the owner: most users never download one, so extract()
+// no longer builds one eagerly on every call. _ensure_patched() (rather than
+// opening /patched.pdf directly) covers a docx request arriving before any
+// extract/fix has run for the currently loaded document -- analyze() unlinks
+// /patched.pdf on load, so without this call this would raise instead of
+// producing the file.
 async function buildDocx(pages) {
   post('progress', { phase: 'working' });
   py.globals.set('_PAGES', pages || 'all');
   await py.runPythonAsync(`
+_ensure_patched()
 d = pymupdf.open("/patched.pdf")
 sel = list(range(d.page_count))
 if _PAGES == 'odd':    sel = [i for i in sel if i % 2 == 0]   # 1-based odd  -> 0,2,4...
@@ -349,7 +352,7 @@ self.onmessage = async (e) => {
     if (m.type === 'boot') { await boot(); return; }
     if (m.type === 'analyze') { return post('analyzed', await analyze(new Uint8Array(m.bytes))); }
     if (m.type === 'fix')     { const r = await fix();          return post('fixed', r, [r.pdfBytes.buffer]); }
-    if (m.type === 'extract') { const r = await extract();          return post('extracted', r, [r.docxBytes.buffer]); }
+    if (m.type === 'extract') { const r = await extract(); return post('extracted', r); }
     if (m.type === 'docx')    { const r = await buildDocx(m.pages); return post('docx-built', r, [r.docxBytes.buffer]); }
   } catch (err) {
     post('error', { message: (err && err.message) ? err.message : String(err) });
