@@ -516,16 +516,22 @@ const App = (() => {
       const btn = $('save-docx');
       // extract no longer builds a .docx — every selection, including "all", is
       // serialised on demand against the cached patched PDF.
+      // Capture sel now: only this button is disabled during the build, so the
+      // pages-seg buttons stay clickable and can reassign sel before the await
+      // below resolves. Both the request and the filename must use the value
+      // that was active when the build was requested, not whatever sel is by
+      // the time the worker replies.
+      const requestedSel = sel;
       btn.disabled = true;
       const prev = btn.textContent;
       btn.textContent = 'Building…';
       try {
-        const d = await call('docx', { pages: sel });
+        const d = await call('docx', { pages: requestedSel });
         // "all" keeps the plain name; a filtered download says which half it is.
-        const suffix = sel === 'all' ? '' : '.' + sel;
+        const suffix = requestedSel === 'all' ? '' : '.' + requestedSel;
         download(d.docxBytes, baseName() + suffix + '.docx',
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-      } catch (err) {
+      } catch {
         toast('Could not build the .docx.');
       } finally {
         btn.disabled = false; btn.textContent = prev;
