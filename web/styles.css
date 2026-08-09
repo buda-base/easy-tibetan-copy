@@ -320,7 +320,11 @@ header {
 .textbox.rich { white-space: normal; }
 .textbox.rich .para { margin: 0 0 .8em; }
 .textbox.rich .para:last-child { margin-bottom: 0; }
-.textbox.rich .ln { display:block; }
+/* .ln is block in both .rich (per-line preview) and .proof (R3 sample) — the
+   sample's lines are joined with no separator (see renderPdfResult), so
+   block display stacks them cleanly without an extra blank line from a
+   preserved newline. */
+.textbox .ln { display:block; }
 .textbox.rich span { font-family: inherit; }
 
 /* error */
