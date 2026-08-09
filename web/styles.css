@@ -254,8 +254,13 @@ header {
 .btn-quiet:hover { color: var(--maroon); background: var(--paper-deep); border-color: var(--line-strong); }
 .btn-actions { display:flex; gap:12px; margin-top: 26px; }
 /* flex:1 resolves to flex-basis:0, so the primary was squeezed by its siblings
-   and "Download fixed PDF" wrapped onto two lines. */
+   and "Download fixed PDF" wrapped onto two lines. flex:0 0 auto fixes that,
+   but a lone primary (no siblings to be squeezed by) would otherwise shrink to
+   its label and hug the left edge — :only-child restores the full-width
+   "stamp" for that case (config screen's "Fix & download", the no-text
+   result's "Try another file"). */
 .btn-actions .btn-primary { width:auto; flex:0 0 auto; white-space:nowrap; }
+.btn-actions .btn-primary:only-child { width:100%; }
 
 /* ----------------------------------------------------------- processing */
 .processing { text-align:center; padding: 50px 20px; }
