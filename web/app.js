@@ -352,49 +352,65 @@ const App = (() => {
 
   // ---- step 4: results -----------------------------------------------------
   function renderPdfResult(s, pdfBytes) {
-    const seen = s.fonts_seen || 0;
-    const fixed = s.patched || 0;
-    const noMatch = s.no_match ?? Math.max(0, seen - fixed - (s.no_change || 0));
+    const seen    = s.fonts_seen || 0;
+    const fixed   = s.patched || 0;
     const tibetan = s.tibetan_chars || 0;
-    const junk = s.junk_chars || 0;
-    // junk = characters that still extract as non-Tibetan, non-ASCII after the
-    // worker tried both the gid and PUA-free trees — the honest "does this copy
-    // cleanly" signal. 0 = clean; >0 = some runs are still garbled. Issue #16
-    // used to slip through as a false "all good" because we only counted real
-    // Tibetan and never noticed the leftover garbage.
+    const junk    = s.junk_chars || 0;
+    const junkFonts = s.junk_fonts || [];
+    const sample  = s.sample || '';
+    const pages   = (state.analysis && state.analysis.page_count) || 0;
+    // junk is now narrow: PUA, Thai block or U+FFFD only. A file mixing Tibetan
+    // with English or Sanskrit no longer trips it, so junk > 0 genuinely means
+    // some runs still copy as garbage.
     const hasTibetan = tibetan >= 8;
     const phase =
-      junk === 0 && fixed > 0  ? 'ok' :       // repaired and now clean
-      junk === 0 && hasTibetan ? 'already' :  // was already valid Unicode
-      hasTibetan               ? 'partial' :  // some Tibetan recovered, junk remains
-                                 'cant';        // nothing usable came out
-    const ok = phase === 'ok';
-
-    const statCards = (
-      phase === 'ok'      ? [['Fonts seen', seen], ['Fonts fixed', fixed], ['Glyphs upgraded', s.upgrades || 0]] :
-      phase === 'already' ? [['Fonts seen', seen], ['Already Unicode', '✓']] :
-      phase === 'partial' ? [['Fonts seen', seen], ['Fonts fixed', fixed], ['Still garbled', junk]] :
-                            [['Fonts seen', seen], ['Fonts fixed', fixed], ['Not recognised', noMatch]]
-    ).map(([label, val]) => `<div class="stat"><b>${val ?? 0}</b><span>${label}</span></div>`).join('');
+      junk === 0 && fixed > 0  ? 'ok' :
+      junk === 0 && hasTibetan ? 'already' :
+      hasTibetan               ? 'partial' :
+                                 'cant';
 
     const badgeOk = `<div class="badge-ok"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></div>`;
     const badgeWarn = `<div class="badge-warn"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v6"/><path d="M12 17h.01"/></svg></div>`;
 
+    const fontList = junkFonts.map((f) => `<span class="fontname">${esc(f)}</span>`).join(', ');
+    // junk_chars and junk_fonts come from different PyMuPDF extractions and can
+    // disagree: junk > 0 with an empty junkFonts list is reachable. Give that
+    // case its own honest wording — we know something still copies as garbage,
+    // but we can't name the font — instead of forcing it through the "one
+    // font" / "some fonts" phrasing, which would make the headline and body
+    // contradict each other.
+    const nFonts = junkFonts.length;
+    const partialHeadline = nFonts === 0
+      ? "Mostly fixed — a few characters still don't copy cleanly"
+      : `Mostly fixed — ${nFonts === 1 ? 'one font' : 'some fonts'} we don't cover`;
+    const partialBodyTail = nFonts === 0
+      ? `A few characters still copy as garbage, and we can't tell which font is responsible — sending us the file will help us track it down.`
+      : `The runs set in ${fontList} still copy as garbage — ${nFonts === 1 ? "that font isn't" : "those fonts aren't"} in our database yet. Sending us the file is how ${nFonts === 1 ? 'it gets' : 'they get'} added.`;
+
     const head =
       phase === 'ok' ? `${badgeOk}
-          <div><h3>Your PDF is fixed</h3><p>Copy-paste and text extraction should now return correct Unicode.</p></div>`
+          <div><h3>Your PDF is fixed</h3><p>Here's what copying from it gives you now.</p></div>`
     : phase === 'already' ? `${badgeOk}
-          <div><h3>This PDF is already fine</h3><p>Its Tibetan already extracts as correct Unicode — copy-paste and search work as-is, no repair needed. You can still extract the text below.</p></div>`
+          <div><h3>This PDF is already fine</h3><p>Its Tibetan already extracts as correct Unicode — no repair was needed. Here's what copying from it gives you.</p></div>`
     : phase === 'partial' ? `${badgeWarn}
-          <div><h3>Partially repaired</h3><p>Most of the Tibetan now copies as correct Unicode, but ${junk} character${junk === 1 ? '' : 's'} across some fonts still aren't recognised — those parts may copy as garbage. This file mixes legacy fonts we don't fully cover yet.</p></div>`
+          <div><h3>${partialHeadline}</h3><p>${tibetan.toLocaleString()} Tibetan characters came out correctly. ${partialBodyTail}</p></div>`
     : `${badgeWarn}
           <div><h3>This PDF couldn't be repaired</h3><p>None of its ${seen} fonts are in our recognition database, so its Tibetan can't be turned into Unicode. This file uses legacy fonts we don't cover yet.</p></div>`;
 
+    // The proof: show the repaired Tibetan rather than counting it. 'cant'
+    // produced nothing usable, so it shows neither sample nor figures.
+    const proof = (phase !== 'cant' && sample)
+      ? `<div class="textbox proof">${esc(sample).split('\n').map((l) => `<span class="ln">${l}</span>`).join('')}</div>`
+      : '';
+    const figures = phase === 'cant' ? '' : `
+        <div class="proofline">
+          <span>${fixed} font${fixed === 1 ? '' : 's'} repaired</span><span class="dot"></span>
+          <span>${pages} page${pages === 1 ? '' : 's'}</span><span class="dot"></span>
+          <span>${tibetan.toLocaleString()} Tibetan characters</span>
+        </div>`;
+
     const extractBtn = `<button class="btn btn-accent" id="to-extract"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> Extract text</button>`;
     const dlBtn = `<button class="btn btn-primary" id="dl"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg> Download fixed PDF</button>`;
-    // 'partial' / 'cant' files are exactly what a future "try harder" pass
-    // (lazy-loaded gshape tree) would target; for now we invite the user to send
-    // the file so coverage can be extended.
     const sendBtn = `<a class="btn btn-accent" href="mailto:eroux@bdrc.io?subject=${encodeURIComponent('Unsupported Tibetan PDF')}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="m22 7-10 6L2 7"/></svg> Send us this PDF</a>`;
     const doAnother = `<button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Do another</button>`;
 
@@ -402,13 +418,13 @@ const App = (() => {
       phase === 'ok'      ? `${dlBtn} ${extractBtn} ${doAnother}` :
       phase === 'already' ? `${extractBtn} ${doAnother}` :
       phase === 'partial' ? `${dlBtn} ${extractBtn} ${sendBtn} ${doAnother}` :
-                            `${sendBtn}
-          <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Try another</button>`;
+                            `${sendBtn} <button class="btn btn-quiet" onclick="App.reset()" style="margin-left:auto">Try another</button>`;
 
     $('view-result').innerHTML = `
       <div class="panel swap-enter">
         <div class="result-head">${head}</div>
-        <div class="stats">${statCards}</div>
+        ${proof}
+        ${figures}
         <div class="btn-actions" style="flex-wrap:wrap">${actions}</div>
       </div>`;
     if ($('dl')) {

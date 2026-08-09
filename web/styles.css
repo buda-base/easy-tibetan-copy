@@ -287,6 +287,19 @@ header {
 .stat b { display:block; font-family:'Fraunces',serif; font-size: 1.9rem; font-weight:500; color: var(--maroon); line-height:1; }
 .stat span { display:block; font-size:.76rem; color: var(--ink-faint); margin-top: 8px; text-transform:uppercase; letter-spacing:.08em; }
 
+/* R3 report: the proof is a sample of the repaired text, not a stat card. */
+.textbox.proof { max-height: 200px; margin-top: 18px; }
+.proofline {
+  font-size:.82rem; color: var(--ink-faint); margin-top: 12px;
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+}
+.proofline .dot { width:4px; height:4px; border-radius:50%; background: var(--line-strong); }
+.fontname {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.9em;
+  background: var(--paper-deep); border:1px solid var(--line);
+  border-radius:5px; padding:1px 6px;
+}
+
 /* extracted text */
 .texttools { display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; gap:12px; }
 .texttools .fmt { font-size:.78rem; color: var(--ink-faint); text-transform:uppercase; letter-spacing:.1em; }
