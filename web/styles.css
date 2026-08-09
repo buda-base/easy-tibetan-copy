@@ -282,11 +282,6 @@ header {
 .result-head h3 { font-family:'Fraunces',serif; font-weight:450; font-size:1.5rem; }
 .result-head p { color: var(--ink-faint); font-size:.9rem; }
 
-.stats { display:grid; grid-template-columns: repeat(auto-fit, minmax(110px,1fr)); gap: 12px; margin: 22px 0; }
-.stat { background: var(--paper-deep); border:1px solid var(--line); border-radius: var(--radius); padding: 16px; text-align:center; }
-.stat b { display:block; font-family:'Fraunces',serif; font-size: 1.9rem; font-weight:500; color: var(--maroon); line-height:1; }
-.stat span { display:block; font-size:.76rem; color: var(--ink-faint); margin-top: 8px; text-transform:uppercase; letter-spacing:.08em; }
-
 /* R3 report: the proof is a sample of the repaired text, not a stat card. */
 .textbox.proof { max-height: 200px; margin-top: 18px; }
 .proofline {
