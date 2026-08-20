@@ -6,21 +6,17 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Pinned, validated commit of pdf-cmap-fix.
-# 534993e = main with the tier-1 GID corroboration guard. Tier-1 keys are raw
-# GIDs, so a lookup only transfers when the embedded font shares the DB font's
-# glyph order; the library used to pick one on a font-name match alone and apply
-# it unconditionally. A same-named but incompatible release (TibetanChogyalUnicode
-# ships a dozen dated builds) then overwrote an already-correct ToUnicode. Note
-# the worker cannot detect that on its own: rewriting correct Tibetan into *other*
-# Tibetan codepoints leaves junk_chars at 0, so the escalation below stays silent
-# and the file is reported as fixed. It provides the two GID lookup trees the
-# browser worker uses:
+# 5f0f484 = main with the cheap patched-PDF save (garbage=2). The previous pin
+# used tobytes(garbage=4), which merges duplicate objects and hangs for minutes
+# on large tagged PDFs (300+ pages, tens of thousands of xrefs) — including in
+# the in-browser worker. It still includes the tier-1 GID corroboration guard
+# and the two GID lookup trees the browser worker uses:
 #   - font_lookup_byid          default tier-1 (gid) tree
 #   - font_lookup_gid_pua_free  PUA-free variant — fixes issue #16, where mixed
 #                               legacy fonts otherwise copy as Thai-block garbage
 # (See web/worker.js: gid runs first, and we escalate to the PUA-free tree only
 # when the gid output still extracts non-Tibetan junk.)
-PIN=534993e72aee21e59a0de7aa73749cb2eb842981
+PIN=5f0f484b0c8d178c9d80644f1cc969798cd63f20
 OUT=web/wheels
 
 # Browser download budget: bundle ONLY those two GID trees (~25M + ~22M of JSON,

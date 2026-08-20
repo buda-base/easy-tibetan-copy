@@ -90,20 +90,34 @@ def _junk_fonts(path):
     d.close()
     return sorted(names)
 
+def _save_patched(doc, path):
+    # Do not use patch_pdf's write path: older wheels call
+    # tobytes(garbage=4), and garbage>=3 merges duplicate objects.
+    # On a 300-page tagged PDF that is ~2 minutes natively and hangs
+    # the browser worker. Level 2 still drops unused objects.
+    doc.save(path, garbage=2, deflate=True)
+
+def _run_patch(src, dst, **kwargs):
+    d = pymupdf.open(src)
+    try:
+        stats = dict(pdf_cmap_fix.patch_doc(d, **kwargs))
+        _save_patched(d, dst)
+        return stats
+    finally:
+        d.close()
+
 def _patch_best(src, dst):
-    res = pdf_cmap_fix.patch_pdf(src, output_path=dst, write_file=True)
-    stats = dict(res.get("stats", {}))
+    stats = _run_patch(src, dst)
     tib, junk, sample = _score_pdf(dst)
     strategy = "gid"
     if junk > 0 and _PUA_FREE.is_dir():
         cand = "/_cand_pua.pdf"
-        res2 = pdf_cmap_fix.patch_pdf(src, output_path=cand, write_file=True,
-                                      font_lookup_dir=_PUA_FREE)
+        res2 = _run_patch(src, cand, font_lookup_dir=_PUA_FREE)
         tib2, junk2, sample2 = _score_pdf(cand)
         # Prefer the output with the least junk, breaking ties on most Tibetan.
         if (junk2, -tib2) < (junk, -tib):
             shutil.copyfile(cand, dst)
-            stats = dict(res2.get("stats", {}))
+            stats = dict(res2)
             tib, junk, sample, strategy = tib2, junk2, sample2, "gid-pua-free"
         try:
             os.unlink(cand)
