@@ -6,17 +6,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Pinned, validated commit of pdf-cmap-fix.
-# 5f0f484 = main with the cheap patched-PDF save (garbage=2). The previous pin
-# used tobytes(garbage=4), which merges duplicate objects and hangs for minutes
-# on large tagged PDFs (300+ pages, tens of thousands of xrefs) — including in
-# the in-browser worker. It still includes the tier-1 GID corroboration guard
-# and the two GID lookup trees the browser worker uses:
+# 666e9b4 = HuaGuang / Founder decoder (Hg2Uni.tbl) + reject GID maps with no
+# Tibetan. Also includes the cheap patched-PDF save (garbage=2) and the two
+# GID lookup trees the browser worker uses:
 #   - font_lookup_byid          default tier-1 (gid) tree
 #   - font_lookup_gid_pua_free  PUA-free variant — fixes issue #16, where mixed
 #                               legacy fonts otherwise copy as Thai-block garbage
 # (See web/worker.js: gid runs first, and we escalate to the PUA-free tree only
 # when the gid output still extracts non-Tibetan junk.)
-PIN=5f0f484b0c8d178c9d80644f1cc969798cd63f20
+PIN=666e9b439108f0ed3c0c910d2049d0c6cdfa0bec
 OUT=web/wheels
 
 # Browser download budget: bundle ONLY those two GID trees (~25M + ~22M of JSON,
@@ -31,6 +29,7 @@ pdf_cmap_fix = [
     "data/pytiblegenc/*.csv",
     "data/pytiblegenc/glyph_shape_db.npz",
     "data/pytiblegenc/glyph_shape_fonts.json",
+    "data/huaguang/*",
 ]
 TOML
 
@@ -46,7 +45,8 @@ git -C "$work/src" sparse-checkout set \
   pdf_cmap_fix/gid pdf_cmap_fix/gname pdf_cmap_fix/gshape \
   pdf_cmap_fix/data/font_lookup_byid \
   pdf_cmap_fix/data/font_lookup_gid_pua_free \
-  pdf_cmap_fix/data/pytiblegenc
+  pdf_cmap_fix/data/pytiblegenc \
+  pdf_cmap_fix/data/huaguang
 git -C "$work/src" checkout --quiet "$PIN"
 
 # Swap the [tool.setuptools.package-data] array for our browser-scoped list.
