@@ -6,15 +6,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Pinned, validated commit of pdf-cmap-fix.
-# 870becc = HuaGuang decoder + FHYW/FHZW symbol fonts (page numbers / leaders).
-# Also includes the cheap patched-PDF save (garbage=2) and the two
-# GID lookup trees the browser worker uses:
+# 2141298 = Quartz spaced-hex /ToUnicode parse + omit empty CMap dests.
+# Also includes HuaGuang / FHYW-FHZW, the cheap patched-PDF save (garbage=2),
+# and the two GID lookup trees the browser worker uses:
 #   - font_lookup_byid          default tier-1 (gid) tree
 #   - font_lookup_gid_pua_free  PUA-free variant — fixes issue #16, where mixed
 #                               legacy fonts otherwise copy as Thai-block garbage
 # (See web/worker.js: gid runs first, and we escalate to the PUA-free tree only
 # when the gid output still extracts non-Tibetan junk.)
-PIN=870becc47e4bc166df798bfe899b3599f709f739
+PIN=2141298c64d2996ff803bb1df77e8aeb704ddd5a
 OUT=web/wheels
 
 # Browser download budget: bundle ONLY those two GID trees (~25M + ~22M of JSON,

@@ -2,21 +2,13 @@
 
 macOS Pages/Quartz writes multi-codepoint /ToUnicode destinations with the hex
 words separated by spaces — ``<21><0f04 0f05>`` — which is valid PostScript
-hex-string syntax. pdf-cmap-fix's ``_hex_to_unicode`` measures the string
-length *including* those spaces, so any even number of codepoints yields an
-odd length ("0f04 0f05" is 9 chars), triggers a bogus ``"0"`` pad,
-``bytes.fromhex`` rejects "00f04 0f05", and the entry parses as "". Odd
-codepoint counts ("0f66 0f92 0fb2", 14 chars) survive.
+hex-string syntax. An older ``_hex_to_unicode`` counted those spaces, so even
+codepoint counts parsed empty and a later CMap rewrite turned ``ཨོཾ`` into
+``ཨo``. Upstream now strips whitespace inside ``<...>``.
 
-On this fixture 30 of the 94 referenced codes parse empty. That is harmless
-*today* only because the font has no lookup-table match, so ``changed == 0``
-and pdf-cmap-fix never rewrites the stream. It stops being harmless the moment
-the font gains a lookup entry: ``apply_font_merges_to_doc`` rewrites the whole
-CMap from ``merged = dict(existing)``, and those 30 mappings go back empty —
-``༄༅། །རྗེ་བཙུན་`` then extracts as ``!། །$ེ་བཙུན་``.
-
-So the guard that matters is `test_repair_preserves_the_already_correct_text`:
-whatever upstream does, repairing this file must never degrade it.
+``test_spaced_hex_destinations_are_parsed`` locks the parse in.
+``test_repair_preserves_the_already_correct_text`` guards the user-visible
+contract: repairing this file must never degrade the extracted text.
 
 Upstream: https://github.com/OpenPecha/pdf-cmap-fix
 
@@ -95,15 +87,6 @@ def test_repair_preserves_the_already_correct_text(tmp_path):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "upstream pdf-cmap-fix `_hex_to_unicode` counts the spaces when testing "
-        "the hex length, so even-codepoint destinations parse as empty. Strict: "
-        "when a wheel bump makes this pass, drop the marker — the workaround "
-        "note in this module's docstring is then obsolete."
-    ),
-)
 def test_spaced_hex_destinations_are_parsed():
     unmapped = _referenced_but_unmapped(fitz.open(FIXTURE))
     assert unmapped == {}, (
