@@ -6,15 +6,17 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Pinned, validated commit of pdf-cmap-fix.
-# 2141298 = Quartz spaced-hex /ToUnicode parse + omit empty CMap dests.
-# Also includes HuaGuang / FHYW-FHZW, the cheap patched-PDF save (garbage=2),
-# and the two GID lookup trees the browser worker uses:
+# 2936ae0 = TB-Youtso / TB2-Youtso / TB-Youtso-Bold tables (Sheja) plus
+# -Normal name stripping and unreadable-Wingdings hardening.
+# Also includes Quartz spaced-hex CMaps, HuaGuang / FHYW-FHZW, the cheap
+# patched-PDF save (garbage=2), and the two GID lookup trees the browser
+# worker uses:
 #   - font_lookup_byid          default tier-1 (gid) tree
 #   - font_lookup_gid_pua_free  PUA-free variant — fixes issue #16, where mixed
 #                               legacy fonts otherwise copy as Thai-block garbage
 # (See web/worker.js: gid runs first, and we escalate to the PUA-free tree only
 # when the gid output still extracts non-Tibetan junk.)
-PIN=2141298c64d2996ff803bb1df77e8aeb704ddd5a
+PIN=2936ae0207780e750056e9f3a055f2c007608f69
 OUT=web/wheels
 
 # Browser download budget: bundle ONLY those two GID trees (~25M + ~22M of JSON,
