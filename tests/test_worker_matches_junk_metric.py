@@ -24,8 +24,10 @@ Run (in a venv with the repository wheel):
 """
 
 import os
+import re
 
 import pytest
+import fitz
 
 import junk_metric
 from junk_metric import clean, is_hard_junk, junk_fonts, score_pdf
@@ -35,6 +37,9 @@ WORKER_JS = os.path.join(HERE, "..", "web", "worker.js")
 CLEAN_FIXTURE = os.path.join(HERE, "fixtures", "thrangu-p1.pdf")
 ALREADY_FIXTURE = os.path.join(HERE, "fixtures", "quartz-spaced-cmap-p1.pdf")
 BROKEN_FIXTURE = os.path.join(HERE, "fixtures", "issue16-p1.pdf")
+ACTUALTEXT_FIXTURE = os.path.join(
+    HERE, "fixtures", "kunsang-actualtext-page278.pdf"
+)
 
 pdf_cmap_fix = pytest.importorskip(
     "pdf_cmap_fix", reason="install the bundled wheel first: pip install web/wheels/*.whl"
@@ -104,6 +109,25 @@ def test_junk_fonts_matches_the_mirror(worker_ns, tmp_path):
     out = str(tmp_path / "gid.pdf")
     pdf_cmap_fix.patch_pdf(BROKEN_FIXTURE, output_path=out, write_file=True)
     assert worker_ns["_junk_fonts"](out) == junk_fonts(out)
+
+
+def test_worker_automatically_strips_corrupt_tibetan_actualtext(
+    worker_ns, tmp_path
+):
+    out = str(tmp_path / "actualtext.pdf")
+    stats = worker_ns["_run_patch"](ACTUALTEXT_FIXTURE, out)
+
+    assert stats["actualtext_corrupt_detected"] == 1
+    assert stats["actualtext_repeated_marks_honored"] >= 100
+    assert stats["actualtext_repeated_marks_ignored"] == 0
+
+    doc = fitz.open(out)
+    try:
+        assert doc.page_count == 1
+        text = doc[0].get_text()
+    finally:
+        doc.close()
+    assert not re.search(r"([\u0f71-\u0f84])\1", text)
 
 
 def test_subset_prefix_matches_the_mirror(worker_ns):

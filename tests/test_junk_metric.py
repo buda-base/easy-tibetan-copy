@@ -7,9 +7,8 @@ into the "partially repaired" branch with an orange badge. Any Tibetan PDF
 containing English or Sanskrit hit the same wall.
 
 These tests guard both directions: the false positive must stay dead, and the
-genuine issue #16 garbage must still be caught. The PUA-free escalation itself
-(default gid leaves Thai-block junk, the PUA-free tree clears it) is guarded
-once, in tests/test_issue16_escalation.py -- do not re-add it here.
+metric must still recognize genuinely broken codepoints. Issue #16 itself is
+now repaired by compatibility-aware same-name font selection.
 
 Run (in a venv with the repository wheel):
     pip install web/wheels/*.whl pymupdf fonttools
@@ -85,10 +84,10 @@ def test_sample_is_capped(tmp_path):
     assert len(sample.split("\n")) <= 3
 
 
-def test_junk_is_attributed_to_the_offending_font(tmp_path):
+def test_issue16_default_repair_has_no_offending_font(tmp_path):
     out = str(tmp_path / "gid.pdf")
     pdf_cmap_fix.patch_pdf(BROKEN_FIXTURE, output_path=out, write_file=True)
-    assert "Monlam Uni OuChan3" in junk_fonts(out)
+    assert junk_fonts(out) == []
 
 
 class _FakePage:

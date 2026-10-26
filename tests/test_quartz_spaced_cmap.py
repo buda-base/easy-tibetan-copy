@@ -10,7 +10,7 @@ codepoint counts parsed empty and a later CMap rewrite turned ``ཨོཾ`` into
 ``test_repair_preserves_the_already_correct_text`` guards the user-visible
 contract: repairing this file must never degrade the extracted text.
 
-Upstream: https://github.com/OpenPecha/pdf-cmap-fix
+Upstream: https://github.com/buda-base/pdf-cmap-fix
 
 Fixture: page 1 of a Pages/Quartz (macOS 10.11) export of a Tibetan sadhana,
 metadata stripped.

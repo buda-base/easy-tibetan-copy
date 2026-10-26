@@ -1,15 +1,11 @@
-"""Regression test for issue #16 — mixed legacy fonts that copy as garbage.
+"""Regression test for issue #16 — mixed legacy fonts that copied as garbage.
 
-Some Tibetan PDFs mix fonts: the default gid lookup tree repairs most of them,
-but a few map glyphs into the Thai Unicode block (U+0E00–U+0E7F), so those runs
-still copy-paste as garbage. The tool reported "fixed" anyway, because it only
-counted recovered Tibetan and never the leftover junk.
+Older pdf-cmap-fix releases selected a richer but incompatible same-name font
+release, mapping some runs into the Thai Unicode block. Compatibility-aware
+candidate selection now repairs the fixture with the default GID tree.
 
-The fix: bundle the PUA-free gid tree in the wheel and, when the gid output
-still extracts non-Tibetan/non-ASCII "junk", escalate to it. This test guards
-both halves — that the wheel ships the PUA-free tree, and that it clears the
-junk where plain gid does not. Scoring lives in `tests/junk_metric.py`, which
-mirrors `web/worker.js`.
+The browser still bundles the PUA-free tree as a fallback for other PDFs. These
+tests guard both the improved default and that fallback.
 
 Run (after `pip install web/wheels/*.whl pymupdf fonttools`):
     python -m pytest tests/test_issue16_escalation.py -q
@@ -24,7 +20,7 @@ from junk_metric import pua_free_dir, score_pdf
 HERE = os.path.dirname(__file__)
 FIXTURE = os.path.join(HERE, "fixtures", "issue16-p1.pdf")
 
-# A line that is Thai-block garbage under gid and correct Tibetan under PUA-free.
+# A line that used to be Thai-block garbage under the default GID tree.
 EXPECTED_TIBETAN = "གང་ཐུགས་བདེ་ཆེན"
 
 pdf_cmap_fix = pytest.importorskip(
@@ -41,11 +37,13 @@ def test_wheel_bundles_pua_free_tree():
     )
 
 
-def test_default_gid_leaves_thai_block_garbage(tmp_path):
+def test_default_gid_selects_the_compatible_font_release(tmp_path):
     out = str(tmp_path / "gid.pdf")
     pdf_cmap_fix.patch_pdf(FIXTURE, output_path=out, write_file=True)
-    _, junk, _ = score_pdf(out)
-    assert junk > 0, "fixture no longer reproduces issue #16 under the default gid tree"
+    tib, junk, _ = score_pdf(out)
+    assert junk == 0
+    assert tib > 100
+    assert EXPECTED_TIBETAN in fitz.open(out)[0].get_text()
 
 
 def test_pua_free_clears_the_garbage(tmp_path):

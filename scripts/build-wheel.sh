@@ -6,16 +6,18 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Pinned, validated commit of pdf-cmap-fix.
-# cf3330f includes the reviewed bugs4 legacy tables (Calligraphic, TCRC,
-# TTYoutso, MSTT, ChosGyal, and the distinct TibetanMangala-Normal encoding),
-# plus Quartz spaced-hex CMaps, HuaGuang / FHYW-FHZW, the cheap patched-PDF
-# save (garbage=2), and the two GID lookup trees the browser worker uses:
+# 00cd21e = compatible same-name Monlam release selection plus opt-in
+# keep/auto/strip handling for systematically corrupt Tibetan ActualText.
+# Also includes the reviewed bugs4 legacy tables (Calligraphic, TCRC, TTYoutso,
+# MSTT, ChosGyal, and TibetanMangala-Normal), TB-Youtso / TB2 / Bold, Quartz
+# spaced-hex CMaps, HuaGuang / FHYW-FHZW, the cheap patched-PDF save
+# (garbage=2), and the two GID lookup trees the browser worker uses:
 #   - font_lookup_byid          default tier-1 (gid) tree
 #   - font_lookup_gid_pua_free  PUA-free variant — fixes issue #16, where mixed
 #                               legacy fonts otherwise copy as Thai-block garbage
 # (See web/worker.js: gid runs first, and we escalate to the PUA-free tree only
 # when the gid output still extracts non-Tibetan junk.)
-PIN=cf3330fe63a185faf90c93907e43db2b62cc12af
+PIN=00cd21e4e28dd3bb1696f9e53f387f32dd0c5e11
 OUT=web/wheels
 
 # Browser download budget: bundle ONLY those two GID trees (~25M + ~22M of JSON,
@@ -40,7 +42,7 @@ trap 'rm -rf "$work"' EXIT
 # Partial + sparse clone: fetch blobs on demand and check out only the package
 # source and the two data trees we ship — never the 139M gshape trees.
 git clone --quiet --filter=blob:none --no-checkout \
-  https://github.com/OpenPecha/pdf-cmap-fix.git "$work/src"
+  https://github.com/buda-base/pdf-cmap-fix.git "$work/src"
 git -C "$work/src" sparse-checkout init --cone
 git -C "$work/src" sparse-checkout set \
   pdf_cmap_fix/gid pdf_cmap_fix/gname pdf_cmap_fix/gshape \

@@ -66,7 +66,7 @@ web/vendor/tibetan-ansi-to-unicode/   vendored JS converter             (Word/RT
 
 **PDF path** — the UI hands the bytes to a **Web Worker** running Pyodide 0.29.4
 (which bundles PyMuPDF 1.26.3 + fonttools). The worker installs the pure-Python
-[`pdf-cmap-fix`](https://github.com/OpenPecha/pdf-cmap-fix) wheel and
+[`pdf-cmap-fix`](https://github.com/buda-base/pdf-cmap-fix) wheel and
 `python-docx`, repairs/extracts in memory, and returns the result for download.
 
 **Word / RTF path** — no Pyodide. The app lazy-imports the vendored
@@ -101,11 +101,14 @@ repo settings, enable **Pages** with the **“GitHub Actions”** source.
   structured text, and preserves formatting into the `.docx` (plus a plain `.txt`).
 - **Legacy-font coverage** depends on the font being known to `pdf-cmap-fix`.
   Report fonts that don't convert upstream at
-  [OpenPecha/pdf-cmap-fix](https://github.com/OpenPecha/pdf-cmap-fix).
+  [buda-base/pdf-cmap-fix](https://github.com/buda-base/pdf-cmap-fix).
+- **Corrupt `/ActualText`** is handled in automatic mode. Valid metadata is
+  retained, while systematically duplicated Tibetan combining marks are
+  removed after a trusted CMap repair; genuinely painted double vowels remain.
 
 ## Credits & license
 
-Wraps [OpenPecha/pdf-cmap-fix](https://github.com/OpenPecha/pdf-cmap-fix) (MIT)
+Wraps [buda-base/pdf-cmap-fix](https://github.com/buda-base/pdf-cmap-fix) (MIT)
 for PDFs and vendors
 [`tibetan-ansi-to-unicode`](https://github.com/jerefrer/tibetan-ansi-to-unicode)
 for the Word/RTF conversion. The preview and exported `.docx` use the

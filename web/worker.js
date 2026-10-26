@@ -98,6 +98,10 @@ def _save_patched(doc, path):
     doc.save(path, garbage=2, deflate=True)
 
 def _run_patch(src, dst, **kwargs):
+    # Keep valid ActualText by default, but automatically strip Tibetan
+    # wrappers when the repaired CMap proves they cause systematic duplicate
+    # combining marks. Painted double vowels remain painted and extract twice.
+    kwargs.setdefault("actualtext", "auto")
     d = pymupdf.open(src)
     try:
         stats = dict(pdf_cmap_fix.patch_doc(d, **kwargs))
